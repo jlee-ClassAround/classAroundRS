@@ -123,18 +123,31 @@ function normalizeDigits(s) {
 // ===== 상태 =====
 let paidRows = [],
     freeRows = [],
+    usersRows = [],
     resultRows = [];
-function refresh() {
-    const ok = paidRows.length > 0 && freeRows.length > 0;
-    $('#run').disabled = !ok;
+
+// 안전하게 value 읽기
+function getDateVal(el) {
+    return el && typeof el.value === 'string' ? el.value.trim() : '';
 }
 
+// 기존 함수 교체
+function refresh() {
+    const hasFiles = paidRows.length > 0 && freeRows.length > 0 && usersRows.length > 0;
+
+    $('#run').disabled = !hasFiles;
+}
 async function onFile(e) {
     const id = e.target.id;
     const f = e.target.files?.[0];
     if (!f) {
-        if (id === 'paid') paidRows = [];
-        else freeRows = [];
+        if (id === 'paid') {
+            paidRows = [];
+        } else if (id === 'free') {
+            freeRows = [];
+        } else {
+            usersRows = [];
+        }
         refresh();
         return;
     }
@@ -146,9 +159,12 @@ async function onFile(e) {
         if (id === 'paid') {
             paidRows = body;
             text('#paidCnt', paidRows.length);
-        } else {
+        } else if (id === 'free') {
             freeRows = body;
             text('#freeCnt', freeRows.length);
+        } else {
+            usersRows = body;
+            // text('#userCnt', usersRows.length);
         }
         text('#stat', '파일 로드 완료');
         toast(`${f.name} 불러오기 성공 (${body.length}행)`);
@@ -166,35 +182,47 @@ function convertToInt(value) {
     // 숫자로 변환 (NaN 방지)
     return Number(num) || 0;
 }
+
 function runMatch() {
+    const usersMap = new Map();
+    for (const r of usersRows) {
+        const p = normalizeDigits(r[1]);
+        if (p) {
+            usersMap.set(p, r[1]);
+        }
+    }
+
     const paidMap = new Map(); // phone -> amount(G)
     for (const r of paidRows) {
         const p = normalizeDigits(r[6]);
-
-        if (p) {
+        if (p && usersMap.has(p)) {
             paidMap.set(p, r[3]);
         }
     }
+
     const out = [['이름(B)', '이메일(C)', '전화번호(D)', '유입경로(F)', '결제금액(G, 결제자)']];
     let matched = 0;
     let googleCnt = 0;
     let metaCnt = 0;
+    let jackCnt = 0;
     let genCnt = 0;
     let totalPrice = 0;
     for (const r of freeRows) {
         const p = normalizeDigits(r[4]);
 
         if (p && paidMap.has(p)) {
-            out.push([r[3] ?? '', r[5] ?? '', r[4] ?? '', paidMap.get(p) ?? '', r[14]]);
             matched++;
             if (paidMap.get(p) === '구글') {
                 googleCnt++;
             } else if (paidMap.get(p) === '메타') {
                 metaCnt++;
+            } else if (paidMap.get(p).trim() === '잭슨프리덤') {
+                jackCnt++;
             } else {
+                out.push([r[3] ?? '', r[5] ?? '', r[4] ?? '', paidMap.get(p) ?? '', r[14]]);
                 genCnt++;
+                totalPrice += convertToInt(r[14]);
             }
-            totalPrice += convertToInt(r[14]);
         }
     }
     resultRows = out;
@@ -203,6 +231,7 @@ function runMatch() {
     text('#matchCnt', matched);
     text('#googleCnt', googleCnt);
     text('#metaCnt', metaCnt);
+    text('#jackCnt', jackCnt);
     text('#genCnt', genCnt);
     price('#totalPrice', totalPrice);
     const has = out.length > 1;
@@ -280,6 +309,7 @@ function resetAll() {
     text('#matchCnt', '0');
     text('#googleCnt', '0');
     text('#metaCnt', '0');
+    text('#jackCnt', '0');
     text('#genCnt', '0');
     $('#run').disabled = true;
     $('#dlCsv').disabled = true;
@@ -292,6 +322,7 @@ function resetAll() {
 // ===== 바인딩 =====
 $('#paid').addEventListener('change', onFile);
 $('#free').addEventListener('change', onFile);
+$('#users').addEventListener('change', onFile);
 $('#run').addEventListener('click', runMatch);
 $('#dlCsv').addEventListener('click', downloadCSV);
 $('#dlXls').addEventListener('click', downloadXLS);
