@@ -101,10 +101,15 @@ button:disabled {
 }
 .stat {
     display: flex;
-    gap: 8px;
-    align-items: center;
+    /* gap: 8px; */
+    align-items: flex-start;
+    flex-flow: column;
     margin-top: 8px;
     color: var(--ink);
+}
+.stat p {
+    margin: 0;
+    margin-bottom: 8px;
 }
 table {
     width: 100%;
