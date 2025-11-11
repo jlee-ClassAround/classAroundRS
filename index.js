@@ -183,62 +183,65 @@ function convertToInt(value) {
 }
 
 function runMatch() {
-    const out = [['이름(B)', '이메일(C)', '전화번호(D)', '유입경로(F)', '결제금액(G, 결제자)']];
+    const out = [['이름(B)', '이메일(C)', '전화번호(D)', '유입경로(F)', '결제금액(G)', '가입일']];
+
+    const paidMap = new Map(); // phone -> 유입경로
+    const typeMap = new Map(); // type -> [matchedCount, sum, totalCount]
+    const usersMap = new Map(); // phone -> 가입일
     let matched = 0;
 
-    const usersMap = new Map();
-    const paidMap = new Map();
-    const typeMap = new Map(); // key -> [matchedCount, sum, totalCount]
-
-    // ✅ 회원가입 목록 매핑
+    // ✅ usersRows → Map으로 변환
     if (usersRows.length > 0) {
         for (const r of usersRows) {
-            const p = normalizeDigits(r[1]);
-            if (p) usersMap.set(p, r[1]);
-        }
+            const phone = normalizeDigits(r[1]);
+            const createdAt = r[2] || ''; // 가입일 열 (3번째)
 
-        for (const r of paidRows) {
-            const p = normalizeDigits(r[6]);
-            if (p && usersMap.has(p)) {
-                paidMap.set(p, r[3] || '기타');
-            }
-        }
-    } else {
-        for (const r of paidRows) {
-            const p = normalizeDigits(r[6]);
-            paidMap.set(p, r[3] || '기타');
+            if (phone) usersMap.set(phone, createdAt);
         }
     }
 
-    // ✅ ① 전체 유입경로 수 (paidRows 기준)
+    // ✅ paidRows → Map으로 변환
     for (const r of paidRows) {
-        const type = (r[3] && r[3].trim()) || '기타';
-        if (typeMap.has(type)) {
-            const [matchedCount, sum, totalCount] = typeMap.get(type);
-            typeMap.set(type, [matchedCount, sum, totalCount + 1]);
+        const phone = normalizeDigits(r[6]);
+        const source = (r[3] || '기타').trim();
+        if (phone) paidMap.set(phone, source);
+
+        // 유입경로별 전체 카운트 추가
+        if (typeMap.has(source)) {
+            const [matchedCount, sum, totalCount] = typeMap.get(source);
+            typeMap.set(source, [matchedCount, sum, totalCount + 1]);
         } else {
-            typeMap.set(type, [0, 0, 1]);
+            typeMap.set(source, [0, 0, 1]);
         }
     }
 
-    // ✅ ② freeRows 매칭 시작
+    // ✅ freeRows 순회
     for (const r of freeRows) {
         const p = normalizeDigits(r[4]);
         const amount = convertToInt(r[14]);
-        if (amount > 0) {
-            const type = p && paidMap.has(p) ? paidMap.get(p)?.trim() || '기타' : '기타';
+        if (amount <= 0) continue;
 
-            if (p && paidMap.has(p)) matched++;
+        const type = p && paidMap.has(p) ? paidMap.get(p) : '기타';
+        const joinedDate = usersMap.get(p) || ''; // ✅ 가입일 가져오기
 
-            if (typeMap.has(type)) {
-                const [matchedCount, sum, totalCount] = typeMap.get(type);
-                typeMap.set(type, [matchedCount + 1, sum + amount, totalCount]);
-            } else {
-                // ⚠️ freeRows에서만 등장한 신규 type은 totalCount = 0으로 둔다
-                typeMap.set(type, [1, amount, 0]);
-            }
-            out.push([r[3] ?? '', r[5] ?? '', r[4] ?? '', type, r[14]]);
+        if (p && paidMap.has(p)) matched++;
+
+        if (typeMap.has(type)) {
+            const [matchedCount, sum, totalCount] = typeMap.get(type);
+            typeMap.set(type, [matchedCount + 1, sum + amount, totalCount]);
+        } else {
+            typeMap.set(type, [1, amount, 0]);
         }
+
+        // ✅ 가입일 열 추가
+        out.push([
+            r[3] ?? '', // 이름
+            r[5] ?? '', // 이메일
+            r[4] ?? '', // 전화번호
+            type, // 유입경로
+            r[14], // 결제금액
+            joinedDate, // 가입일 (있으면 표시, 없으면 '')
+        ]);
     }
 
     resultRows = out;
@@ -292,7 +295,7 @@ function getBaseName() {
 function downloadCSV() {
     if (resultRows.length <= 1) return;
     const safe = resultRows.map((r, i) =>
-        i === 0 ? r : [r[0], r[1], "'" + (r[2] ?? ''), r[3], r[4]]
+        i === 0 ? r : [r[0], r[1], "'" + (r[2] ?? ''), r[3], r[4], r[5]]
     );
     const csv = toCSV(safe);
     const bom = '\uFEFF'; // BOM 추가 → 엑셀이 UTF-8로 인식
@@ -318,6 +321,7 @@ function downloadXLS() {
                 `<td style="mso-number-format:'\\@'">${esc(r[2])}</td>` +
                 `<td>${esc(r[3])}</td>` +
                 `<td>${esc(r[4])}</td>` +
+                `<td>${esc(r[5])}</td>` +
                 '</tr>'
         )
         .join('');
