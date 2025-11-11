@@ -225,19 +225,20 @@ function runMatch() {
     for (const r of freeRows) {
         const p = normalizeDigits(r[4]);
         const amount = convertToInt(r[14]);
-        const type = p && paidMap.has(p) ? paidMap.get(p)?.trim() || '기타' : '기타';
+        if (amount > 0) {
+            const type = p && paidMap.has(p) ? paidMap.get(p)?.trim() || '기타' : '기타';
 
-        if (p && paidMap.has(p)) matched++;
+            if (p && paidMap.has(p)) matched++;
 
-        if (typeMap.has(type)) {
-            const [matchedCount, sum, totalCount] = typeMap.get(type);
-            typeMap.set(type, [matchedCount + 1, sum + amount, totalCount]);
-        } else {
-            // ⚠️ freeRows에서만 등장한 신규 type은 totalCount = 0으로 둔다
-            typeMap.set(type, [1, amount, 0]);
+            if (typeMap.has(type)) {
+                const [matchedCount, sum, totalCount] = typeMap.get(type);
+                typeMap.set(type, [matchedCount + 1, sum + amount, totalCount]);
+            } else {
+                // ⚠️ freeRows에서만 등장한 신규 type은 totalCount = 0으로 둔다
+                typeMap.set(type, [1, amount, 0]);
+            }
+            out.push([r[3] ?? '', r[5] ?? '', r[4] ?? '', type, r[14]]);
         }
-
-        out.push([r[3] ?? '', r[5] ?? '', r[4] ?? '', type, r[14]]);
     }
 
     resultRows = out;
