@@ -133,7 +133,10 @@ function getDateVal(el) {
 
 // 기존 함수 교체
 function refresh() {
-    const hasFiles = paidRows.length > 0 && freeRows.length > 0 && usersRows.length > 0;
+    const matchTypeInput = document.getElementById('matchType');
+    const value = matchTypeInput.value.trim();
+    const hasFiles =
+        paidRows.length > 0 && freeRows.length > 0 && usersRows.length > 0 && value !== '';
 
     $('#run').disabled = !hasFiles;
 }
@@ -158,10 +161,10 @@ async function onFile(e) {
         const body = rows.slice(1); // 1행 헤더
         if (id === 'paid') {
             paidRows = body;
-            text('#paidCnt', paidRows.length);
+            // text('#paidCnt', paidRows.length);
         } else if (id === 'free') {
             freeRows = body;
-            text('#freeCnt', freeRows.length);
+            // text('#freeCnt', freeRows.length);
         } else {
             usersRows = body;
             // text('#userCnt', usersRows.length);
@@ -202,38 +205,51 @@ function runMatch() {
 
     const out = [['이름(B)', '이메일(C)', '전화번호(D)', '유입경로(F)', '결제금액(G, 결제자)']];
     let matched = 0;
-    let googleCnt = 0;
-    let metaCnt = 0;
-    let jackCnt = 0;
-    let genCnt = 0;
+    const matchTypeInput = document.querySelector('#matchType').value.trim();
+    // let googleCnt = 0;
+    // let metaCnt = 0;
+    // let jackCnt = 0;
+    // let genCnt = 0;
     let totalPrice = 0;
+    const typeMap = new Map();
     for (const r of freeRows) {
         const p = normalizeDigits(r[4]);
 
         if (p && paidMap.has(p)) {
             matched++;
-            if (paidMap.get(p) === '구글') {
-                googleCnt++;
-            } else if (paidMap.get(p) === '메타') {
-                metaCnt++;
-            } else if (paidMap.get(p).trim() === '잭슨프리덤') {
-                jackCnt++;
-            } else {
+            const type = (paidMap.get(p) || '').trim() || '일반';
+            typeMap.set(type, (typeMap.get(type) || 0) + 1);
+            // if (paidMap.get(p) === '구글') {
+            //     googleCnt++;
+            // } else if (paidMap.get(p) === '메타') {
+            //     metaCnt++;
+            // } else if (paidMap.get(p).trim() === '잭슨프리덤') {
+            //     jackCnt++;
+            // } else {
+            if (paidMap.get(p) === matchTypeInput) {
                 out.push([r[3] ?? '', r[5] ?? '', r[4] ?? '', paidMap.get(p) ?? '', r[14]]);
-                genCnt++;
                 totalPrice += convertToInt(r[14]);
             }
+            // }
         }
     }
-    resultRows = out;
 
+    resultRows = out;
     render(out);
-    text('#matchCnt', matched);
-    text('#googleCnt', googleCnt);
-    text('#metaCnt', metaCnt);
-    text('#jackCnt', jackCnt);
-    text('#genCnt', genCnt);
-    price('#totalPrice', totalPrice);
+
+    const statDiv = document.querySelector('.stat');
+    const counts = Array.from(typeMap.entries());
+
+    let html = `<span>`;
+    html += counts.map(([key, val]) => `${key} : <b>${val}</b>`).join(' · ');
+    html += ` · 총금액: <b>${totalPrice.toLocaleString()}원</b></spn>`;
+    statDiv.innerHTML = html;
+    // text('#matchCnt', matched);
+    // text('#googleCnt', googleCnt);
+    // text('#metaCnt', metaCnt);
+    // text('#jackCnt', jackCnt);
+    // text('#genCnt', genCnt);
+    // price('#totalPrice', totalPrice);
     const has = out.length > 1;
     $('#dlCsv').disabled = !has;
     $('#dlXls').disabled = !has;
@@ -304,13 +320,13 @@ function resetAll() {
     resultRows = [];
     $('#paid').value = '';
     $('#free').value = '';
-    text('#paidCnt', '0');
-    text('#freeCnt', '0');
-    text('#matchCnt', '0');
-    text('#googleCnt', '0');
-    text('#metaCnt', '0');
-    text('#jackCnt', '0');
-    text('#genCnt', '0');
+    // text('#paidCnt', '0');
+    // text('#freeCnt', '0');
+    // text('#matchCnt', '0');
+    // text('#googleCnt', '0');
+    // text('#metaCnt', '0');
+    // text('#jackCnt', '0');
+    // text('#genCnt', '0');
     $('#run').disabled = true;
     $('#dlCsv').disabled = true;
     $('#dlXls').disabled = true;
@@ -323,6 +339,8 @@ function resetAll() {
 $('#paid').addEventListener('change', onFile);
 $('#free').addEventListener('change', onFile);
 $('#users').addEventListener('change', onFile);
+$('#matchType').addEventListener('change', refresh);
+
 $('#run').addEventListener('click', runMatch);
 $('#dlCsv').addEventListener('click', downloadCSV);
 $('#dlXls').addEventListener('click', downloadXLS);
