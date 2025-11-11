@@ -135,8 +135,7 @@ function getDateVal(el) {
 function refresh() {
     const matchTypeInput = document.getElementById('matchType');
     const value = matchTypeInput.value.trim();
-    const hasFiles =
-        paidRows.length > 0 && freeRows.length > 0 && usersRows.length > 0 && value !== '';
+    const hasFiles = paidRows.length > 0 && freeRows.length > 0 && value !== '';
 
     $('#run').disabled = !hasFiles;
 }
@@ -161,13 +160,10 @@ async function onFile(e) {
         const body = rows.slice(1); // 1행 헤더
         if (id === 'paid') {
             paidRows = body;
-            // text('#paidCnt', paidRows.length);
         } else if (id === 'free') {
             freeRows = body;
-            // text('#freeCnt', freeRows.length);
         } else {
             usersRows = body;
-            // text('#userCnt', usersRows.length);
         }
         text('#stat', '파일 로드 완료');
         toast(`${f.name} 불러오기 성공 (${body.length}행)`);
@@ -187,53 +183,58 @@ function convertToInt(value) {
 }
 
 function runMatch() {
-    const usersMap = new Map();
-    for (const r of usersRows) {
-        const p = normalizeDigits(r[1]);
-        if (p) {
-            usersMap.set(p, r[1]);
-        }
-    }
+    const out = [['이름(B)', '이메일(C)', '전화번호(D)', '유입경로(F)', '결제금액(G, 결제자)']];
+    const matchTypeInput = document.querySelector('#matchType').value.trim();
+    let matched = 0;
+    let totalPrice = 0;
 
-    const paidMap = new Map(); // phone -> amount(G)
-    for (const r of paidRows) {
-        const p = normalizeDigits(r[6]);
-        if (p && usersMap.has(p)) {
+    const usersMap = new Map();
+    const paidMap = new Map(); //phone -> amount(G)
+    const typeMap = new Map();
+
+    // 회원가입 목록 받은 경우
+    if (usersRows.length > 0) {
+        const usersMap = new Map();
+        for (const r of usersRows) {
+            const p = normalizeDigits(r[1]);
+            if (p) {
+                usersMap.set(p, r[1]);
+            }
+        }
+
+        for (const r of paidRows) {
+            const p = normalizeDigits(r[6]);
+            if (p && usersMap.has(p)) {
+                paidMap.set(p, r[3]);
+            }
+        }
+    } else {
+        // 회원가입 목록 없는 경우
+        for (const r of paidRows) {
+            const p = normalizeDigits(r[6]);
             paidMap.set(p, r[3]);
         }
     }
 
-    const out = [['이름(B)', '이메일(C)', '전화번호(D)', '유입경로(F)', '결제금액(G, 결제자)']];
-    let matched = 0;
-    const matchTypeInput = document.querySelector('#matchType').value.trim();
-    // let googleCnt = 0;
-    // let metaCnt = 0;
-    // let jackCnt = 0;
-    // let genCnt = 0;
-    let totalPrice = 0;
-    const typeMap = new Map();
     for (const r of freeRows) {
         const p = normalizeDigits(r[4]);
 
+        // 구글시트에 트래킹 목록 회원이 있는 경우
         if (p && paidMap.has(p)) {
             matched++;
-            const type = (paidMap.get(p) || '').trim() || '일반';
+            const type = paidMap.get(p).trim();
             typeMap.set(type, (typeMap.get(type) || 0) + 1);
-            // if (paidMap.get(p) === '구글') {
-            //     googleCnt++;
-            // } else if (paidMap.get(p) === '메타') {
-            //     metaCnt++;
-            // } else if (paidMap.get(p).trim() === '잭슨프리덤') {
-            //     jackCnt++;
-            // } else {
+            // [['이름(B)', '이메일(C)', '전화번호(D)', '유입경로(F)', '결제금액(G, 결제자)']];
+            out.push([r[3] ?? '', r[5] ?? '', r[4] ?? '', paidMap.get(p) ?? '', r[14]]);
             if (paidMap.get(p) === matchTypeInput) {
-                out.push([r[3] ?? '', r[5] ?? '', r[4] ?? '', paidMap.get(p) ?? '', r[14]]);
                 totalPrice += convertToInt(r[14]);
             }
-            // }
+        } else {
+            const type = '기타';
+            typeMap.set(type, (typeMap.get(type) || 0) + 1);
+            out.push([r[3] ?? '', r[5] ?? '', r[4] ?? '', paidMap.get(p) ?? '', r[14]]);
         }
     }
-
     resultRows = out;
     render(out);
 
@@ -244,12 +245,6 @@ function runMatch() {
     html += counts.map(([key, val]) => `${key} : <b>${val}</b>`).join(' · ');
     html += ` · 총금액: <b>${totalPrice.toLocaleString()}원</b></spn>`;
     statDiv.innerHTML = html;
-    // text('#matchCnt', matched);
-    // text('#googleCnt', googleCnt);
-    // text('#metaCnt', metaCnt);
-    // text('#jackCnt', jackCnt);
-    // text('#genCnt', genCnt);
-    // price('#totalPrice', totalPrice);
     const has = out.length > 1;
     $('#dlCsv').disabled = !has;
     $('#dlXls').disabled = !has;
@@ -320,13 +315,6 @@ function resetAll() {
     resultRows = [];
     $('#paid').value = '';
     $('#free').value = '';
-    // text('#paidCnt', '0');
-    // text('#freeCnt', '0');
-    // text('#matchCnt', '0');
-    // text('#googleCnt', '0');
-    // text('#metaCnt', '0');
-    // text('#jackCnt', '0');
-    // text('#genCnt', '0');
     $('#run').disabled = true;
     $('#dlCsv').disabled = true;
     $('#dlXls').disabled = true;
@@ -340,7 +328,6 @@ $('#paid').addEventListener('change', onFile);
 $('#free').addEventListener('change', onFile);
 $('#users').addEventListener('change', onFile);
 $('#matchType').addEventListener('change', refresh);
-
 $('#run').addEventListener('click', runMatch);
 $('#dlCsv').addEventListener('click', downloadCSV);
 $('#dlXls').addEventListener('click', downloadXLS);
