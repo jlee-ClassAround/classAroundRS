@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ko">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>무료신청↔결제자 전화번호 매칭기 (CSV 전용 · Excel 안전 다운로드)</title>
+        <link rel="stylesheet" href="style.css" />
+        <link
+            rel="stylesheet"
+            href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"
+        />
+        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+        <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ko.js"></script>
+    </head>
+    <body>
+        <div class="wrap">
+            <div class="card">
+                <h1>무료신청↔결제자 매칭기</h1>
+                <p class="desc">
+                    세 개의 <b>CSV</b> 파일을 올리면
+                    <b>D열 전화번호(숫자만·하이폰 무시)</b> 기준으로 일치하는 사람을 찾아<br />
+                    <b>무료신청 파일의 C(이름)·F(이메일)·E(전화번호)·O(결제금액)</b>와<br />
+                    <b>무료강의 신청자 파일의 O(결제금액)과 결제자 파일의 D(유입경로)</b>을
+                    출력합니다. <br />모든 처리는 브라우저에서만 수행됩니다.
+                </p>
+
+                <div class="row">
+                    <div>
+                        <label>① 코어데브 트래킹 파일 CSV 업로드 (.csv)</label>
+                        <input type="file" id="paid" accept=".csv" />
+                        <div class="hint">(필수) 전화번호=G, 유입경로=D</div>
+                    </div>
+                    <div>
+                        <label>② 구글시트 CSV 업로드 (.csv)</label>
+                        <input type="file" id="free" accept=".csv" />
+                        <div class="hint">(필수) 이름=C, 이메일=F, 전화번호=E, 결제금액=O</div>
+                    </div>
+                    <div>
+                        <label>③ 사용자 목록 CSV 업로드 (.csv)</label>
+                        <input type="file" id="users" accept=".csv" />
+                        <div class="hint">전화번호=B, 생성일=C</div>
+                    </div>
+                    <!-- <div>
+                        <label>④ 조회할 매체명</label>
+                        <input type="text" id="matchType" />
+                        <div class="hint">(필수) 월세받는사람들, 잭슨</div>
+                    </div> -->
+                </div>
+                <!-- <div class="row">
+                    <div>
+                        <label>영상업로드일</label>
+                        <input type="text" id="startDate" class="date" name="date" />
+                        <div class="hint">시작일은 00:00:00 부터</div>
+                    </div>
+                    <div>
+                        <label>무료강의일</label>
+                        <input type="text" id="endDate" class="date" name="date" />
+                        <div class="hint">종료일은 23:59:59 까지</div>
+                    </div>
+                </div> -->
+                <div class="btns">
+                    <button id="run" class="primary" disabled>매칭 실행</button>
+                    <button id="dlCsv" disabled>CSV(UTF-8+BOM) 다운로드</button>
+                    <button id="dlXls" disabled>Excel(.xls) 다운로드</button>
+                    <button id="reset" class="warn">초기화</button>
+                    <input
+                        id="fname"
+                        type="text"
+                        placeholder="파일명 (예: matched)"
+                        value="matched"
+                        style="
+                            width: 220px;
+                            padding: 10px;
+                            border-radius: 12px;
+                            border: 1px solid var(--line);
+                            background: #fff;
+                            color: #000;
+                        "
+                    />
+                    <span class="badge" id="stat">대기 중</span>
+                </div>
+
+                <div class="stat">
+                    <!-- <span
+                        >읽은 행수 — 결제자: <b id="paidCnt">0</b> · 무료신청:
+                        <b id="freeCnt">0</b> · 매칭: <b id="matchCnt">0</b> · 구글:
+                        <b id="googleCnt">0</b> · 메타: <b id="metaCnt">0</b> · 잭슨:
+                        <b id="jackCnt">0</b> · 일반: <b id="genCnt">0</b> · 총금액:
+                        <b id="totalPrice">0</b>
+                    </span> -->
+                </div>
+
+                <div id="tableWrap"></div>
+                <div class="footer">
+                    ※ CSV가 깨지면 <b>UTF-8+BOM</b> 또는 <b>Excel(.xls) 다운로드</b>를 사용하세요.
+                    전화번호는 텍스트로 저장되어 010 앞자리와 길이가 보존됩니다.
+                </div>
+            </div>
+        </div>
+
+        <div id="toast" class="toast"></div>
+
+        <script src="index.js"></script>
+        <script>
+            flatpickr('.date', {
+                dateFormat: 'Y-m-d', // 출력형식: 2025-11-04
+                locale: 'ko', // 한국어 달력
+                allowInput: true, // 직접 입력도 허용
+            });
+        </script>
+    </body>
+</html>
