@@ -143,35 +143,50 @@ async function onFile(e) {
     const id = e.target.id;
     const f = e.target.files?.[0];
     if (!f) {
-        if (id === 'paid') {
-            paidRows = [];
-        } else if (id === 'free') {
-            freeRows = [];
-        } else {
-            usersRows = [];
-        }
+        if (id === 'paid') paidRows = [];
+        else if (id === 'free') freeRows = [];
+        else usersRows = [];
         refresh();
         return;
     }
+
     text('#stat', `${f.name} 읽는 중…`);
+
     try {
-        const txt = await readCsvText(f);
-        const rows = parseCSV(txt);
-        const body = rows.slice(1); // 1행 헤더
-        if (id === 'paid') {
-            paidRows = body;
-        } else if (id === 'free') {
-            freeRows = body;
-        } else {
-            usersRows = body;
+        let rows = [];
+
+        // -----------------------------
+        // ① XLSX 파일인지 판별
+        // -----------------------------
+        if (f.name.endsWith('.xlsx') || f.name.endsWith('.xls')) {
+            const ab = await readAsArrayBuffer(f);
+            const wb = XLSX.read(ab, { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const json = XLSX.utils.sheet_to_json(ws, { header: 1 });
+            rows = json;
         }
-        text('#stat', '파일 로드 완료');
+        // -----------------------------
+        // ② CSV 파일 처리
+        // -----------------------------
+        else {
+            const txt = await readCsvText(f);
+            rows = parseCSV(txt);
+        }
+
+        const body = rows.slice(1); // 헤더 제외
+
+        if (id === 'paid') paidRows = body;
+        else if (id === 'free') freeRows = body;
+        else usersRows = body;
+
+        text('#stat', `파일 로드 완료`);
         toast(`${f.name} 불러오기 성공 (${body.length}행)`);
     } catch (err) {
         console.error(err);
-        alert('CSV 읽기 오류: ' + (err.message || err));
+        alert('파일 읽기 오류: ' + (err.message || err));
         text('#stat', '오류');
     }
+
     refresh();
 }
 function convertToInt(value) {
