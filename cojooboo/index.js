@@ -250,29 +250,146 @@ function runMatch() {
     // ✅ ③ 통계 렌더링
     const statDiv = document.querySelector('.stat');
     const counts = Array.from(typeMap.entries());
-    let totalMatchCount = 0;
+
+    // 총합 계산
     let totalAmountPrice = 0;
-    counts.forEach(([key, [matchedCount, sum, totalCount]]) => {
-        totalMatchCount += matchedCount;
+    counts.forEach(([_, [, sum]]) => {
         totalAmountPrice += sum;
     });
 
-    let html = `<br>`;
+    // ==============================
+    // 분류 기준
+    // ==============================
+    // Paid - 고정
+    const paidKeys = ['메타', '구글'];
+
+    // 기타 판단 함수
+    function isOtherKey(key) {
+        if (!key) return true; // null, undefined, 빈 문자열
+        const k = String(key).trim();
+        if (k === '') return true;
+        if (k === '-') return true;
+        if (k.includes('기타')) return true;
+        return false;
+    }
+
+    // 카테고리 배열
+    const paidList = [];
+    const organicList = [];
+    const otherList = [];
+
+    // 전체 분류
     counts.forEach(([key, [matchedCount, sum, totalCount]]) => {
-        const ratio = totalCount > 0 ? ((matchedCount / totalCount) * 100).toFixed(1) : '0.0';
-        html += `
-        <p style="margin:6px 0; line-height:1.6;">
-          <b>${key}</b> : ${matchedCount}/${totalCount}건
-          <span style="margin-left:10px;">전환률: ${ratio}%</span>
-          <span style="margin-left:10px;">결제금액 합계: ${sum.toLocaleString()}원 (${(
-            (sum / totalAmountPrice) *
-            100
-        ).toFixed(1)}%)</span>
-        </p>`;
+        // ① Paid
+        if (paidKeys.includes(key)) {
+            paidList.push([key, matchedCount, sum, totalCount]);
+            return;
+        }
+
+        // ② 기타 (공백/없음/기타)
+        if (isOtherKey(key)) {
+            otherList.push([key || '기타', matchedCount, sum, totalCount]);
+            return;
+        }
+
+        // ③ 아니면 전부 오가닉
+        organicList.push([key, matchedCount, sum, totalCount]);
     });
-    html += `<p style="margin:6px 0; line-height:1.6;">
-            <b>총금액</b> : ${totalAmountPrice.toLocaleString()}원
-          </p>`;
+
+    // ==============================
+    // 테이블 생성 유틸
+    // ==============================
+    function makeTable(title, rows) {
+        let html = `
+        <h3 style="margin:10px 0;">${title}</h3>
+        <table style="width:100%; border-collapse:collapse; margin-bottom:15px; font-size:15px;">
+        <thead>
+            <tr style="background:#f6f6f6;">
+                <th style="padding:8px;">유입경로</th>
+                <th style="padding:8px; text-align:right;">매칭</th>
+                <th style="padding:8px; text-align:right;">전환률</th>
+                <th style="padding:8px; text-align:right;">결제금액 합계</th>
+                <th style="padding:8px; text-align:right;">비중</th>
+            </tr>
+        </thead>
+        <tbody>
+    `;
+
+        rows.forEach(([key, matchedCount, sum, totalCount]) => {
+            const ratio = totalCount > 0 ? ((matchedCount / totalCount) * 100).toFixed(1) : '0.0';
+            const portion =
+                totalAmountPrice > 0 ? ((sum / totalAmountPrice) * 100).toFixed(1) : '0.0';
+
+            html += `
+            <tr style="border-bottom:1px solid #eee;">
+                <td style="padding:8px;">${key}</td>
+                <td style="padding:8px; text-align:right;">${matchedCount}/${totalCount}</td>
+                <td style="padding:8px; text-align:right;">${ratio}%</td>
+                <td style="padding:8px; text-align:right;">${sum.toLocaleString()}원</td>
+                <td style="padding:8px; text-align:right;">${portion}%</td>
+            </tr>
+        `;
+        });
+
+        html += `</tbody></table>`;
+        return html;
+    }
+
+    // ==============================
+    // 요약 계산
+    // ==============================
+    function calcSummary(list) {
+        let matched = 0;
+        let total = 0;
+        let amount = 0;
+
+        list.forEach(([_, mCount, sum, tCount]) => {
+            matched += mCount;
+            total += tCount;
+            amount += sum;
+        });
+
+        const ratio = total > 0 ? ((matched / total) * 100).toFixed(1) : '0.0';
+
+        return { matched, total, amount, ratio };
+    }
+
+    // 요약 데이터
+    const paidSummary = calcSummary(paidList);
+    const organicSummary = calcSummary(organicList);
+
+    // ==============================
+    // 모든 컨텐츠 조립
+    // ==============================
+    let html = '';
+
+    // 테이블 1. Paid
+    html += makeTable('① 페이드', paidList);
+
+    // 테이블 2. 오가닉
+    html += makeTable('② 오가닉', organicList);
+
+    // 테이블 3. 기타
+    html += makeTable('③ 기타 (기존 회원)', otherList);
+
+    // ==============================
+    // 전체 요약 섹션
+    // ==============================
+    html += `
+<h3 style="margin-top:20px;">전체 요약</h3>
+<p>i) <b>페이드 요약</b> : ${paidSummary.matched}/${paidSummary.total}  
+   전환률: ${paidSummary.ratio}%  
+   결제금액 합계: ${paidSummary.amount.toLocaleString()}원</p>
+
+<p>ii) <b>오가닉 요약</b> : ${organicSummary.matched}/${organicSummary.total}  
+   전환률: ${organicSummary.ratio}%  
+   결제금액 합계: ${organicSummary.amount.toLocaleString()}원</p>
+
+<p>iii) <b>전체 결제금액 합계</b> : ${totalAmountPrice.toLocaleString()}원</p>
+`;
+
+    statDiv.innerHTML = html;
+
     statDiv.innerHTML = html;
 
     const has = out.length > 1;
