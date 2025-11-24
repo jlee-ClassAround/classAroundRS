@@ -250,6 +250,12 @@ function runMatch() {
     // ✅ ③ 통계 렌더링
     const statDiv = document.querySelector('.stat');
     const counts = Array.from(typeMap.entries());
+    let totalMatchCount = 0;
+    let totalAmountPrice = 0;
+    counts.forEach(([key, [matchedCount, sum, totalCount]]) => {
+        totalMatchCount += matchedCount;
+        totalAmountPrice += sum;
+    });
 
     let html = `<br>`;
     counts.forEach(([key, [matchedCount, sum, totalCount]]) => {
@@ -258,10 +264,15 @@ function runMatch() {
         <p style="margin:6px 0; line-height:1.6;">
           <b>${key}</b> : ${matchedCount}/${totalCount}건
           <span style="margin-left:10px;">전환률: ${ratio}%</span>
-          <span style="margin-left:10px;">결제금액 합계: ${sum.toLocaleString()}원</span>
+          <span style="margin-left:10px;">결제금액 합계: ${sum.toLocaleString()}원 (${(
+            (sum / totalAmountPrice) *
+            100
+        ).toFixed(1)}%)</span>
         </p>`;
     });
-
+    html += `<p style="margin:6px 0; line-height:1.6;">
+            <b>총금액</b> : ${totalAmountPrice.toLocaleString()}원
+          </p>`;
     statDiv.innerHTML = html;
 
     const has = out.length > 1;
