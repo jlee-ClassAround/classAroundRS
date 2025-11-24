@@ -377,15 +377,15 @@ function runMatch() {
     // ==============================
     html += `
 <h3 style="margin-top:20px;">전체 요약</h3>
-<p>i) <b>페이드 요약</b> : ${paidSummary.matched}/${paidSummary.total}  
+<p><b>페이드 요약</b> : ${paidSummary.matched}/${paidSummary.total}  
    전환률: ${paidSummary.ratio}%  
    결제금액 합계: ${paidSummary.amount.toLocaleString()}원</p>
 
-<p>ii) <b>오가닉 요약</b> : ${organicSummary.matched}/${organicSummary.total}  
+<p><b>오가닉 요약</b> : ${organicSummary.matched}/${organicSummary.total}  
    전환률: ${organicSummary.ratio}%  
    결제금액 합계: ${organicSummary.amount.toLocaleString()}원</p>
 
-<p>iii) <b>전체 결제금액 합계</b> : ${totalAmountPrice.toLocaleString()}원</p>
+<p><b>전체 결제금액 합계</b> : ${totalAmountPrice.toLocaleString()}원</p>
 `;
 
     statDiv.innerHTML = html;
