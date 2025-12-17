@@ -1,0 +1,502 @@
+// ===== 유틸 =====
+const COL = { NAME: 1, EMAIL: 2, PHONE: 3, SOURCE: 5 }; // B,C,D,F
+const $ = (sel) => document.querySelector(sel);
+const text = (sel, v) => {
+    $(sel).textContent = v;
+};
+const price = (sel, v) => {
+    $(sel).textContent = '₩' + v.toLocaleString();
+};
+
+function toast(msg) {
+    const t = $('#toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+// CSV 읽기 (UTF-8 우선, 깨짐 시 EUC-KR 재시도) + 견고한 파서
+function readAsArrayBuffer(file) {
+    return new Promise((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = (e) => res(e.target.result);
+        fr.onerror = rej;
+        fr.readAsArrayBuffer(file);
+    });
+}
+async function readCsvText(file) {
+    const ab = await readAsArrayBuffer(file);
+    const u8 = new Uint8Array(ab);
+    let txt = new TextDecoder('utf-8', { fatal: false }).decode(u8);
+    if (/ /.test(txt)) {
+        try {
+            const alt = new TextDecoder('euc-kr').decode(u8);
+            if (!/ /.test(alt)) txt = alt;
+        } catch (_) {}
+    }
+    return txt.replace(/^\uFEFF/, ''); // BOM 제거
+}
+// 간단하지만 견고한 CSV 파서 (따옴표/줄바꿈/구분자 자동)
+function parseCSV(text) {
+    const delims = [',', ';', '\t'];
+    let delim = ',';
+    const lines = text.split(/\r?\n/).slice(0, 3);
+    let best = -1;
+    for (const d of delims) {
+        const s = lines.map((l) => l.split(d).length).reduce((a, b) => a + b, 0);
+        if (s > best) {
+            best = s;
+            delim = d;
+        }
+    }
+    const out = [];
+    let row = [];
+    let i = 0;
+    let q = false;
+    let field = '';
+    while (i < text.length) {
+        const c = text[i++];
+        if (q) {
+            if (c === '"') {
+                if (text[i] === '"') {
+                    field += '"';
+                    i++;
+                } else {
+                    q = false;
+                }
+            } else {
+                field += c;
+            }
+        } else {
+            if (c === '"') {
+                q = true;
+            } else if (c === delim) {
+                row.push(field);
+                field = '';
+            } else if (c === '\n') {
+                row.push(field);
+                out.push(row);
+                row = [];
+                field = '';
+            } else if (c === '\r') {
+                /* ignore */
+            } else {
+                field += c;
+            }
+        }
+    }
+    if (field !== '' || row.length) {
+        row.push(field);
+        out.push(row);
+    }
+    return out.filter((r) => r.some((c) => String(c).trim() !== ''));
+}
+function toCSV(rows) {
+    return rows
+        .map((r) =>
+            r
+                .map((v) => {
+                    const s = String(v ?? '');
+                    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+                })
+                .join(',')
+        )
+        .join('\n');
+}
+function downloadBlob(name, blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+function normalizeDigits(s) {
+    const d = String(s ?? '').replace(/\D+/g, '');
+    if (!d) return '';
+    let out = d.startsWith('82') ? '0' + d.slice(2) : d;
+    if (out.length > 11) out = out.slice(-11);
+    return out;
+}
+
+// ===== 상태 =====
+let paidRows = [],
+    freeRows = [],
+    usersRows = [],
+    resultRows = [];
+
+// 안전하게 value 읽기
+function getDateVal(el) {
+    return el && typeof el.value === 'string' ? el.value.trim() : '';
+}
+
+// 기존 함수 교체
+function refresh() {
+    // const matchTypeInput = document.getElementById('matchType');
+    // const value = matchTypeInput.value.trim();
+    const hasFiles = paidRows.length > 0 && freeRows.length > 0;
+
+    $('#run').disabled = !hasFiles;
+}
+async function onFile(e) {
+    const id = e.target.id;
+    const f = e.target.files?.[0];
+    if (!f) {
+        if (id === 'paid') paidRows = [];
+        else if (id === 'free') freeRows = [];
+        else usersRows = [];
+        refresh();
+        return;
+    }
+
+    text('#stat', `${f.name} 읽는 중…`);
+
+    try {
+        let rows = [];
+
+        // -----------------------------
+        // ① XLSX 파일인지 판별
+        // -----------------------------
+        if (f.name.endsWith('.xlsx') || f.name.endsWith('.xls')) {
+            const ab = await readAsArrayBuffer(f);
+            const wb = XLSX.read(ab, { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const json = XLSX.utils.sheet_to_json(ws, { header: 1 });
+            rows = json;
+        }
+        // -----------------------------
+        // ② CSV 파일 처리
+        // -----------------------------
+        else {
+            const txt = await readCsvText(f);
+            rows = parseCSV(txt);
+        }
+
+        const body = rows.slice(1); // 헤더 제외
+
+        if (id === 'paid') paidRows = body;
+        else if (id === 'free') freeRows = body;
+        else usersRows = body;
+
+        text('#stat', `파일 로드 완료`);
+        toast(`${f.name} 불러오기 성공 (${body.length}행)`);
+    } catch (err) {
+        console.error(err);
+        alert('파일 읽기 오류: ' + (err.message || err));
+        text('#stat', '오류');
+    }
+
+    refresh();
+}
+function convertToInt(value) {
+    if (typeof value !== 'string') return 0;
+    // ₩, $, , , 공백 등 모두 제거
+    const num = value.replace(/[₩$,,\s]/g, '');
+    // 숫자로 변환 (NaN 방지)
+    return Number(num) || 0;
+}
+
+function normalizeName(s) {
+    return String(s ?? '')
+        .trim()
+        .replace(/\s+/g, '') // 모든 공백 제거
+        .replace(/[^\p{L}\p{N}]/gu, '') // 문자/숫자만 남김(한글 포함)
+        .toLowerCase();
+}
+
+function runMatch() {
+    const out = [
+        ['이름(B)', '이메일(C)', '전화번호(D)', '유입경로(F)', '결제금액(G)', '가입일', '매칭기준'],
+    ];
+
+    const paidMapByPhone = new Map(); // phone -> source
+    const paidMapByName = new Map(); // name -> source
+
+    const usersMapByPhone = new Map(); // phone -> 가입일
+    const usersMapByName = new Map(); // name -> 가입일
+
+    const typeMap = new Map(); // type -> [matchedCount, sum, totalCount]
+    let matched = 0;
+
+    // ✅ usersRows → phone/name map
+    if (usersRows.length > 0) {
+        for (const r of usersRows) {
+            const phone = normalizeDigits(r[1]); // users: phone
+            const name = normalizeName(r[0]); // users: name (필요하면 인덱스 조정)
+            const createdAt = r[2] || ''; // users: 가입일
+
+            if (phone) usersMapByPhone.set(phone, createdAt);
+            if (name && createdAt) usersMapByName.set(name, createdAt);
+        }
+    }
+
+    // ✅ paidRows → phone/name map + source별 totalCount
+    for (const r of paidRows) {
+        const phone = normalizeDigits(r[6]); // paid: phone
+        const name = normalizeName(r[1]); // paid: name (필요하면 인덱스 조정)
+        const source = (r[3] || '기타').trim();
+
+        if (phone) paidMapByPhone.set(phone, source);
+        if (name) paidMapByName.set(name, source);
+
+        // 유입경로별 전체 카운트
+        if (typeMap.has(source)) {
+            const [matchedCount, sum, totalCount] = typeMap.get(source);
+            typeMap.set(source, [matchedCount, sum, totalCount + 1]);
+        } else {
+            typeMap.set(source, [0, 0, 1]);
+        }
+    }
+
+    // ✅ freeRows 순회 (phone 우선 → name fallback)
+    for (const r of freeRows) {
+        const freePhone = normalizeDigits(r[4]); // free: phone
+        const freeName = normalizeName(r[3]); // free: name
+        const amount = convertToInt(r[14]);
+        if (amount <= 0) continue;
+
+        let type = '기타';
+        let joinedDate = '';
+        let matchBasis = '미매칭';
+
+        // 1) 전화번호 매칭
+        if (freePhone && paidMapByPhone.has(freePhone)) {
+            type = paidMapByPhone.get(freePhone);
+            joinedDate = usersMapByPhone.get(freePhone) || '';
+            matchBasis = '전화번호';
+            matched++;
+        }
+        // 2) 전화번호 없거나 매칭 실패 → 이름 매칭
+        else if (freeName && paidMapByName.has(freeName)) {
+            type = paidMapByName.get(freeName);
+            // 가입일도 이름으로 fallback
+            joinedDate =
+                (freePhone ? usersMapByPhone.get(freePhone) : '') ||
+                usersMapByName.get(freeName) ||
+                '';
+            matchBasis = '이름';
+            matched++;
+        } else {
+            // 가입일만이라도 채우기(폰만 있으면)
+            joinedDate = (freePhone ? usersMapByPhone.get(freePhone) : '') || '';
+        }
+
+        // typeMap 업데이트(매칭 카운트/금액)
+        if (typeMap.has(type)) {
+            const [matchedCount, sum, totalCount] = typeMap.get(type);
+            typeMap.set(type, [matchedCount + 1, sum + amount, totalCount]);
+        } else {
+            typeMap.set(type, [1, amount, 0]);
+        }
+
+        out.push([
+            r[3] ?? '', // 이름
+            r[5] ?? '', // 이메일
+            r[4] ?? '', // 전화번호
+            type, // 유입경로
+            r[14], // 결제금액(원본)
+            joinedDate, // 가입일
+            matchBasis, // ✅ 매칭기준(전화번호/이름)
+        ]);
+    }
+
+    resultRows = out;
+    render(out);
+
+    // 기존 통계 렌더링 로직 그대로 사용
+    const statDiv = document.querySelector('.stat');
+    const counts = Array.from(typeMap.entries());
+
+    let totalAmountPrice = 0;
+    counts.forEach(([_, [, sum]]) => {
+        totalAmountPrice += sum;
+    });
+
+    const paidKeys = ['메타', '구글'];
+
+    function isOtherKey(key) {
+        if (!key) return true;
+        const k = String(key).trim();
+        if (k === '' || k === '-' || k.includes('기타')) return true;
+        return false;
+    }
+
+    const paidList = [];
+    const organicList = [];
+    const otherList = [];
+
+    counts.forEach(([key, [matchedCount, sum, totalCount]]) => {
+        if (paidKeys.includes(key)) {
+            paidList.push([key, matchedCount, sum, totalCount]);
+            return;
+        }
+        if (isOtherKey(key)) {
+            otherList.push([key || '기타', matchedCount, sum, totalCount]);
+            return;
+        }
+        organicList.push([key, matchedCount, sum, totalCount]);
+    });
+
+    function makeTable(title, rows) {
+        let html = `
+      <h3 style="margin:10px 0;">${title}</h3>
+      <table style="width:100%; border-collapse:collapse; margin-bottom:15px; font-size:15px;">
+      <thead>
+        <tr style="background:#f6f6f6;">
+          <th style="padding:8px;">유입경로</th>
+          <th style="padding:8px; text-align:right;">매칭</th>
+          <th style="padding:8px; text-align:right;">전환률</th>
+          <th style="padding:8px; text-align:right;">결제금액 합계</th>
+          <th style="padding:8px; text-align:right;">비중</th>
+        </tr>
+      </thead>
+      <tbody>
+    `;
+
+        rows.forEach(([key, matchedCount, sum, totalCount]) => {
+            const ratio = totalCount > 0 ? ((matchedCount / totalCount) * 100).toFixed(1) : '0.0';
+            const portion =
+                totalAmountPrice > 0 ? ((sum / totalAmountPrice) * 100).toFixed(1) : '0.0';
+
+            html += `
+        <tr style="border-bottom:1px solid #eee;">
+          <td style="padding:8px;">${key}</td>
+          <td style="padding:8px; text-align:right;">${matchedCount}/${totalCount}</td>
+          <td style="padding:8px; text-align:right;">${ratio}%</td>
+          <td style="padding:8px; text-align:right;">${sum.toLocaleString()}원</td>
+          <td style="padding:8px; text-align:right;">${portion}%</td>
+        </tr>
+      `;
+        });
+
+        html += `</tbody></table>`;
+        return html;
+    }
+
+    function calcSummary(list) {
+        let matched = 0;
+        let total = 0;
+        let amount = 0;
+
+        list.forEach(([_, mCount, sum, tCount]) => {
+            matched += mCount;
+            total += tCount;
+            amount += sum;
+        });
+
+        const ratio = total > 0 ? ((matched / total) * 100).toFixed(1) : '0.0';
+        return { matched, total, amount, ratio };
+    }
+
+    const paidSummary = calcSummary(paidList);
+    const organicSummary = calcSummary(organicList);
+
+    let html = '';
+    html += makeTable('① 페이드', paidList);
+    html += makeTable('② 오가닉', organicList);
+    html += makeTable('③ 기타 (기존 회원)', otherList);
+
+    html += `
+    <h3 style="margin-top:20px;">전체 요약</h3>
+    <p><b>페이드 요약</b> : ${paidSummary.matched}/${paidSummary.total}
+      전환률: ${paidSummary.ratio}%
+      결제금액 합계: ${paidSummary.amount.toLocaleString()}원</p>
+
+    <p><b>오가닉 요약</b> : ${organicSummary.matched}/${organicSummary.total}
+      전환률: ${organicSummary.ratio}%
+      결제금액 합계: ${organicSummary.amount.toLocaleString()}원</p>
+
+    <p><b>전체 결제금액 합계</b> : ${totalAmountPrice.toLocaleString()}원</p>
+  `;
+
+    statDiv.innerHTML = html;
+
+    const has = out.length > 1;
+    $('#dlCsv').disabled = !has;
+    $('#dlXls').disabled = !has;
+    text('#stat', `매칭 완료: ${matched}건`);
+}
+
+function render(rows) {
+    const wrap = $('#tableWrap');
+    if (rows.length === 0) {
+        wrap.innerHTML = '';
+        return;
+    }
+    const [h, ...b] = rows;
+    const thead = '<thead><tr>' + h.map((x) => `<th>${x}</th>`).join('') + '</tr></thead>';
+    const tbody =
+        '<tbody>' +
+        b.map((r) => '<tr>' + r.map((c) => `<td>${c ?? ''}</td>`).join('') + '</tr>').join('') +
+        '</tbody>';
+    wrap.innerHTML = '<table>' + thead + tbody + '</table>';
+}
+
+function getBaseName() {
+    let n = ($('#fname').value || '').trim();
+    if (!n) n = 'matched';
+    return n;
+}
+
+// === Excel 안전 CSV (UTF-8 + BOM, 전화번호 텍스트 강제) ===
+function downloadCSV() {
+    if (resultRows.length <= 1) return;
+    const safe = resultRows.map((r, i) =>
+        i === 0 ? r : [r[0], r[1], "'" + (r[2] ?? ''), r[3], r[4], r[5]]
+    );
+    const csv = toCSV(safe);
+    const bom = '\uFEFF'; // BOM 추가 → 엑셀이 UTF-8로 인식
+    downloadBlob(getBaseName() + '.csv', new Blob([bom, csv], { type: 'text/csv;charset=utf-8' }));
+}
+
+// === Excel(.xls) — HTML 기반 내보내기, 전화번호 텍스트 서식 ===
+function downloadXLS() {
+    if (resultRows.length <= 1) return;
+    const [h, ...b] = resultRows;
+    const esc = (s) =>
+        String(s ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    const head = '<tr>' + h.map((x) => `<th>${esc(x)}</th>`).join('') + '</tr>';
+    const body = b
+        .map(
+            (r) =>
+                '<tr>' +
+                `<td>${esc(r[0])}</td>` +
+                `<td>${esc(r[1])}</td>` +
+                `<td style="mso-number-format:'\\@'">${esc(r[2])}</td>` +
+                `<td>${esc(r[3])}</td>` +
+                `<td>${esc(r[4])}</td>` +
+                `<td>${esc(r[5])}</td>` +
+                '</tr>'
+        )
+        .join('');
+    const html = `<!doctype html><html><head><meta charset="UTF-8"><title>matched</title></head><body><table border="1">${head}${body}</table></body></html>`;
+    downloadBlob(getBaseName() + '.xls', new Blob([html], { type: 'application/vnd.ms-excel' }));
+}
+
+function resetAll() {
+    paidRows = [];
+    freeRows = [];
+    resultRows = [];
+    $('#paid').value = '';
+    $('#free').value = '';
+    $('#run').disabled = true;
+    $('#dlCsv').disabled = true;
+    $('#dlXls').disabled = true;
+    $('#tableWrap').innerHTML = '';
+    text('#stat', '대기 중');
+    toast('초기화 완료');
+}
+
+// ===== 바인딩 =====
+$('#paid').addEventListener('change', onFile);
+$('#free').addEventListener('change', onFile);
+$('#users').addEventListener('change', onFile);
+// $('#matchType').addEventListener('change', refresh);
+$('#run').addEventListener('click', runMatch);
+$('#dlCsv').addEventListener('click', downloadCSV);
+$('#dlXls').addEventListener('click', downloadXLS);
+$('#reset').addEventListener('click', resetAll);
