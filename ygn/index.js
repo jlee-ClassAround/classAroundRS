@@ -305,39 +305,66 @@ function refresh() {
 // ✅ 핵심: 매칭 실행
 // =========================
 function runMatch() {
-    // ---- 고정 열 인덱스(0-based) ----
-    // 1번 파일(결제금액 파일)
-    const PAID_PHONE_IDX = 4; // E
-    const PAID_AMOUNT_IDX = 14; // O
-
-    // 2번 파일(신청자 파일)
+    // =========================
+    // 신청자 파일(2번째 파일): B=1 이름, C=2 연락처
+    // =========================
     const FREE_NAME_IDX = 1; // B
     const FREE_PHONE_IDX = 2; // C
 
-    if (!paidBody.length) return alert('결제금액 파일이 비어있어요.');
-    if (!freeBody.length) return alert('신청자 파일이 비어있어요.');
+    // =========================
+    // 결제금액 파일(1번째 파일) 케이스 2개 지원
+    // 1) XLSX 케이스: E=4 전화번호, O=14 최종금액
+    // 2) CSV  케이스: N=13 전화번호, AI=34 결제금액
+    // =========================
+    const PAID_LAYOUTS = [
+        { name: 'XLSX(E/O)', phoneIdx: 4, amountIdx: 14 }, // E, O
+        { name: 'CSV(N/AI)', phoneIdx: 13, amountIdx: 34 }, // N, AI  (A=0 기준)
+    ];
+
+    if (!paidBody?.length) return alert('결제금액 파일이 비어있어요.');
+    if (!freeBody?.length) return alert('신청자 파일이 비어있어요.');
 
     // 1) 결제자 Map: phone -> sum
     const paidSumMap = new Map(); // normPhone -> number(sum)
-    let paidPhoneOk = 0;
-    let paidAmountOk = 0;
+
+    // 레이아웃별로 실제로 얼마나 잡혔는지 카운트(디버깅용)
+    const layoutHit = Object.fromEntries(PAID_LAYOUTS.map((x) => [x.name, 0]));
+    let paidRowsScanned = 0;
 
     for (const r of paidBody) {
         if (!Array.isArray(r)) continue;
+        paidRowsScanned++;
 
-        const phone = normalizeDigits(r[PAID_PHONE_IDX]);
-        if (!phone) continue;
-        paidPhoneOk++;
+        let matchedLayoutName = null;
+        let phone = '';
+        let amt = 0;
 
-        const amt = moneyToNumber(r[PAID_AMOUNT_IDX]);
-        if (amt <= 0) continue;
-        paidAmountOk++;
+        // ✅ 각 row마다: (E/O 먼저) → 실패하면 (N/AI) 시도
+        for (const layout of PAID_LAYOUTS) {
+            const rawPhone = r[layout.phoneIdx];
+            const rawAmt = r[layout.amountIdx];
 
+            const p = normalizeDigits(rawPhone);
+            if (!p) continue;
+
+            const a = moneyToNumber(rawAmt);
+            if (a <= 0) continue;
+
+            phone = p;
+            amt = a;
+            matchedLayoutName = layout.name;
+            break;
+        }
+
+        if (!matchedLayoutName) continue;
+
+        layoutHit[matchedLayoutName] += 1;
         paidSumMap.set(phone, (paidSumMap.get(phone) || 0) + amt);
     }
 
     // 2) 신청자 기준 결과: 매칭된 것만 출력
     const out = [['이름', '연락처', '결제금액']];
+
     let matchedCount = 0;
     let totalAmount = 0;
 
@@ -350,7 +377,7 @@ function runMatch() {
 
         const sum = phone ? paidSumMap.get(phone) || 0 : 0;
 
-        // ✅ 매칭된 항목만 push
+        // ✅ 매칭된 것만 출력
         if (sum > 0) {
             matchedCount++;
             totalAmount += sum;
@@ -367,15 +394,17 @@ function runMatch() {
         statDiv.innerHTML = `
       <div style="padding:10px; background:#eef6ff; border:1px solid #cfe5ff; border-radius:10px; margin-bottom:12px;">
         <b>매칭 조건</b><br/>
-        결제금액 파일: 전화번호(E=4), 최종금액(O=14)<br/>
         신청자 파일: 이름(B=1), 연락처(C=2)<br/>
-        결제자 유효전화(정규화 통과): <b>${paidPhoneOk.toLocaleString()}</b><br/>
-        유효금액(>0): <b>${paidAmountOk.toLocaleString()}</b><br/>
-        결제자 유니크 번호 수: <b>${paidSumMap.size.toLocaleString()}</b>
+        결제금액 파일: XLSX(E=4,O=14) 또는 CSV(N=13,AI=34) 자동 대응<br/><br/>
+        결제자 스캔 행수: <b>${paidRowsScanned.toLocaleString()}</b><br/>
+        결제자 유니크 번호 수: <b>${paidSumMap.size.toLocaleString()}</b><br/>
+        레이아웃별 적중: 
+        <b>XLSX(E/O) ${layoutHit['XLSX(E/O)'].toLocaleString()}</b> / 
+        <b>CSV(N/AI) ${layoutHit['CSV(N/AI)'].toLocaleString()}</b>
       </div>
 
       <h3 style="margin:10px 0;">요약</h3>
-      <p style="margin:6px 0;">매칭 건수(결제금액 > 0): <b>${matchedCount.toLocaleString()}</b>건</p>
+      <p style="margin:6px 0;">매칭 건수: <b>${matchedCount.toLocaleString()}</b>건</p>
       <p style="margin:6px 0;">총 결제금액 합계: <b>₩${totalAmount.toLocaleString()}</b></p>
     `;
     }
