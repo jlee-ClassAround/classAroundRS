@@ -27,14 +27,19 @@
 
                 <div class="row">
                     <div>
-                        <label>① 업로드 파일</label>
-                        <input type="file" id="paid" accept=".csv .xlsx" />
-                        <div class="hint">(필수) 전화번호=G, 유입경로=D</div>
+                        <label>① 결제자 파일 (.xlsx)</label>
+                        <input type="file" id="paid" accept=".xlsx,.xls,.csv" />
+                        <div class="hint">
+                            (필수) 헤더에 ‘전화번호’, ‘최종금액’ 컬럼이 있어야 함
+                        </div>
                     </div>
+
                     <div>
-                        <label>② 구글시트 CSV 업로드 (.csv)</label>
-                        <input type="file" id="free" accept=".csv .xlsx" />
-                        <div class="hint">(필수) 이름=C, 이메일=F, 전화번호=E, 결제금액=O</div>
+                        <label>② 신청자 파일 (.xlsx)</label>
+                        <input type="file" id="free" accept=".xlsx,.xls,.csv" />
+                        <div class="hint">
+                            (필수) 예: 신청날짜/이름/연락처 (헤더 기반으로 자동 인식)
+                        </div>
                     </div>
                 </div>
 

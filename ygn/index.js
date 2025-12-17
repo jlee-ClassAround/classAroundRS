@@ -1,22 +1,21 @@
-// ===== 유틸 =====
-const COL = { NAME: 1, EMAIL: 2, PHONE: 3, SOURCE: 5 }; // B,C,D,F
+// =====================
+// 유틸
+// =====================
 const $ = (sel) => document.querySelector(sel);
 const text = (sel, v) => {
-    $(sel).textContent = v;
-};
-const price = (sel, v) => {
-    $(sel).textContent = '₩' + v.toLocaleString();
+    const el = $(sel);
+    if (el) el.textContent = v;
 };
 
 function toast(msg) {
     const t = $('#toast');
+    if (!t) return;
     t.textContent = msg;
     t.classList.add('show');
     clearTimeout(toast._t);
     toast._t = setTimeout(() => t.classList.remove('show'), 2600);
 }
 
-// CSV 읽기 (UTF-8 우선, 깨짐 시 EUC-KR 재시도) + 견고한 파서
 function readAsArrayBuffer(file) {
     return new Promise((res, rej) => {
         const fr = new FileReader();
@@ -25,19 +24,21 @@ function readAsArrayBuffer(file) {
         fr.readAsArrayBuffer(file);
     });
 }
+
 async function readCsvText(file) {
     const ab = await readAsArrayBuffer(file);
     const u8 = new Uint8Array(ab);
+
     let txt = new TextDecoder('utf-8', { fatal: false }).decode(u8);
-    if (/ /.test(txt)) {
+    if (/�/.test(txt)) {
         try {
             const alt = new TextDecoder('euc-kr').decode(u8);
-            if (!/ /.test(alt)) txt = alt;
+            if (!/�/.test(alt)) txt = alt;
         } catch (_) {}
     }
-    return txt.replace(/^\uFEFF/, ''); // BOM 제거
+    return txt.replace(/^\uFEFF/, '');
 }
-// 간단하지만 견고한 CSV 파서 (따옴표/줄바꿈/구분자 자동)
+
 function parseCSV(text) {
     const delims = [',', ';', '\t'];
     let delim = ',';
@@ -50,13 +51,16 @@ function parseCSV(text) {
             delim = d;
         }
     }
+
     const out = [];
     let row = [];
     let i = 0;
     let q = false;
     let field = '';
+
     while (i < text.length) {
         const c = text[i++];
+
         if (q) {
             if (c === '"') {
                 if (text[i] === '"') {
@@ -69,9 +73,8 @@ function parseCSV(text) {
                 field += c;
             }
         } else {
-            if (c === '"') {
-                q = true;
-            } else if (c === delim) {
+            if (c === '"') q = true;
+            else if (c === delim) {
                 row.push(field);
                 field = '';
             } else if (c === '\n') {
@@ -80,7 +83,7 @@ function parseCSV(text) {
                 row = [];
                 field = '';
             } else if (c === '\r') {
-                /* ignore */
+                // ignore
             } else {
                 field += c;
             }
@@ -90,8 +93,10 @@ function parseCSV(text) {
         row.push(field);
         out.push(row);
     }
+
     return out.filter((r) => r.some((c) => String(c).trim() !== ''));
 }
+
 function toCSV(rows) {
     return rows
         .map((r) =>
@@ -104,6 +109,7 @@ function toCSV(rows) {
         )
         .join('\n');
 }
+
 function downloadBlob(name, blob) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -112,40 +118,180 @@ function downloadBlob(name, blob) {
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
+
+function getBaseName() {
+    let n = ($('#fname')?.value || '').trim();
+    if (!n) n = 'matched';
+    return n;
+}
+
+function isNonEmptyRow(r) {
+    return Array.isArray(r) && r.some((c) => String(c ?? '').trim() !== '');
+}
+
+function moneyToNumber(v) {
+    if (v == null) return 0;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+    const s = String(v).trim();
+    if (!s) return 0;
+    const num = s.replace(/[^\d.-]/g, '');
+    const n = Number(num);
+    return Number.isFinite(n) ? n : 0;
+}
+
+// ✅ 전화번호 정규화: 하이픈/공백 제거 + +82 변환 + "0 빠진 값" 보정
 function normalizeDigits(s) {
-    const d = String(s ?? '').replace(/\D+/g, '');
+    let d = String(s ?? '').replace(/\D+/g, '');
     if (!d) return '';
-    let out = d.startsWith('82') ? '0' + d.slice(2) : d;
-    if (out.length > 11) out = out.slice(-11);
-    return out;
+
+    // +82 -> 0
+    if (d.startsWith('82')) d = '0' + d.slice(2);
+
+    // ✅ 0이 빠진 케이스 보정: 10자리 & 1로 시작하면 앞에 0 붙임
+    // 예: 1096888984 -> 01096888984
+    if (d.length === 10 && d.startsWith('1')) d = '0' + d;
+
+    // 너무 길면(한 셀에 여러 숫자 섞임) 일단 뒤 11자리만
+    if (d.length > 11) d = d.slice(-11);
+
+    return d;
 }
 
-// ===== 상태 =====
-let paidRows = [],
-    freeRows = [],
-    usersRows = [],
-    resultRows = [];
+function findColIndex(headerRow, candidates) {
+    const norm = (x) =>
+        String(x ?? '')
+            .trim()
+            .replace(/\s+/g, '')
+            .toLowerCase();
 
-// 안전하게 value 읽기
-function getDateVal(el) {
-    return el && typeof el.value === 'string' ? el.value.trim() : '';
+    const header = (headerRow ?? []).map(norm);
+    for (const c of candidates) {
+        const target = norm(c);
+        const idx = header.findIndex((h) => h === target || h.includes(target));
+        if (idx >= 0) return idx;
+    }
+    return -1;
 }
 
-// 기존 함수 교체
+// =====================
+// 엑셀에서 "진짜 표" 찾기 (핵심)
+// =====================
+const PHONE_CANDS = ['전화번호', '연락처', '휴대폰', '휴대전화', '핸드폰'];
+const AMOUNT_CANDS = ['최종금액', '최종결제금액', '최종 금액', '결제금액', '결제 금액'];
+const STATUS_CANDS = ['결제상태', '상태'];
+
+function detectTableInRows(rows, mustHavePhone, mustHaveAmount) {
+    const scanMax = Math.min(rows.length, 150);
+
+    let best = null;
+
+    for (let i = 0; i < scanMax; i++) {
+        const header = rows[i];
+        if (!Array.isArray(header)) continue;
+
+        const phoneIdx = mustHavePhone ? findColIndex(header, PHONE_CANDS) : -1;
+        const amountIdx = mustHaveAmount ? findColIndex(header, AMOUNT_CANDS) : -1;
+
+        const okPhone = !mustHavePhone || phoneIdx >= 0;
+        const okAmount = !mustHaveAmount || amountIdx >= 0;
+        if (!okPhone || !okAmount) continue;
+
+        // 후보 헤더 발견 -> 아래 행들에서 "전화번호가 실제로 채워진 행"이 얼마나 있는지로 점수 계산
+        const body = rows.slice(i + 1).filter(isNonEmptyRow);
+        const sampleMax = Math.min(body.length, 800);
+
+        let phoneFilled = 0;
+        let amountPositive = 0;
+
+        for (let k = 0; k < sampleMax; k++) {
+            const r = body[k];
+
+            // 중간에 헤더가 반복되는 경우 제외
+            const maybeHeaderAgain =
+                String(r[phoneIdx] ?? '').includes('전화') ||
+                String(r[amountIdx] ?? '').includes('금액');
+            if (maybeHeaderAgain) continue;
+
+            const p = normalizeDigits(r[phoneIdx]);
+            if (p) phoneFilled++;
+
+            if (mustHaveAmount) {
+                const a = moneyToNumber(r[amountIdx]);
+                if (a > 0) amountPositive++;
+            }
+        }
+
+        const score = phoneFilled * 100000 + amountPositive * 100 + body.length;
+
+        if (!best || score > best.score) {
+            best = {
+                headerRowIndex: i,
+                header,
+                body,
+                phoneIdx,
+                amountIdx,
+                score,
+                phoneFilled,
+                amountPositive,
+            };
+        }
+    }
+
+    return best;
+}
+
+function pickBestTableFromWorkbook(wb, mustHavePhone, mustHaveAmount) {
+    let best = null;
+
+    for (const sheetName of wb.SheetNames) {
+        const ws = wb.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }).filter(isNonEmptyRow);
+        if (rows.length === 0) continue;
+
+        const cand = detectTableInRows(rows, mustHavePhone, mustHaveAmount);
+        if (!cand) continue;
+
+        const withSheet = { sheetName, ...cand };
+        if (!best || withSheet.score > best.score) best = withSheet;
+    }
+
+    return best;
+}
+
+// =====================
+// 상태
+// =====================
+let paidHeader = [];
+let paidBody = [];
+let freeHeader = [];
+let freeBody = [];
+let resultRows = [];
+
+let paidMeta = null;
+let freeMeta = null;
+
+// =====================
+// UI
+// =====================
 function refresh() {
-    // const matchTypeInput = document.getElementById('matchType');
-    // const value = matchTypeInput.value.trim();
-    const hasFiles = paidRows.length > 0 && freeRows.length > 0;
-
+    const hasFiles = paidBody.length > 0 && freeBody.length > 0;
     $('#run').disabled = !hasFiles;
 }
+
 async function onFile(e) {
-    const id = e.target.id;
+    const id = e.target.id; // paid / free
     const f = e.target.files?.[0];
+
     if (!f) {
-        if (id === 'paid') paidRows = [];
-        else if (id === 'free') freeRows = [];
-        else usersRows = [];
+        if (id === 'paid') {
+            paidHeader = [];
+            paidBody = [];
+            paidMeta = null;
+        } else {
+            freeHeader = [];
+            freeBody = [];
+            freeMeta = null;
+        }
         refresh();
         return;
     }
@@ -153,31 +299,80 @@ async function onFile(e) {
     text('#stat', `${f.name} 읽는 중…`);
 
     try {
-        let rows = [];
-
-        // -----------------------------
-        // ① XLSX 파일인지 판별
-        // -----------------------------
         if (f.name.endsWith('.xlsx') || f.name.endsWith('.xls')) {
             const ab = await readAsArrayBuffer(f);
             const wb = XLSX.read(ab, { type: 'array' });
-            const ws = wb.Sheets[wb.SheetNames[0]];
-            const json = XLSX.utils.sheet_to_json(ws, { header: 1 });
-            rows = json;
-        }
-        // -----------------------------
-        // ② CSV 파일 처리
-        // -----------------------------
-        else {
-            const txt = await readCsvText(f);
-            rows = parseCSV(txt);
+
+            // paid는 phone+amount 둘 다 있는 표를 찾는다 (진짜 결제표만 잡기)
+            const mustHavePhone = true;
+            const mustHaveAmount = id === 'paid';
+
+            const best = pickBestTableFromWorkbook(wb, mustHavePhone, mustHaveAmount);
+
+            if (!best) throw new Error('엑셀에서 유효한 표(전화번호/금액)를 찾지 못했어요.');
+
+            const {
+                sheetName,
+                headerRowIndex,
+                header,
+                body,
+                phoneIdx,
+                amountIdx,
+                phoneFilled,
+                amountPositive,
+            } = best;
+
+            if (id === 'paid') {
+                paidHeader = header;
+                paidBody = body;
+                paidMeta = {
+                    file: f.name,
+                    sheetName,
+                    headerRowIndex,
+                    phoneIdx,
+                    amountIdx,
+                    phoneFilled,
+                    amountPositive,
+                };
+            } else {
+                freeHeader = header;
+                freeBody = body;
+                freeMeta = { file: f.name, sheetName, headerRowIndex, phoneIdx };
+            }
+
+            console.log('[XLSX PICK]', {
+                id,
+                file: f.name,
+                sheetName,
+                headerRowIndex,
+                phoneIdx,
+                amountIdx,
+                phoneFilled,
+                amountPositive,
+                header,
+            });
+
+            text('#stat', `파일 로드 완료`);
+            toast(`${f.name} 불러오기 성공 (${body.length}행)`);
+            refresh();
+            return;
         }
 
-        const body = rows.slice(1); // 헤더 제외
+        // CSV
+        const txt = await readCsvText(f);
+        const rows = parseCSV(txt).filter(isNonEmptyRow);
+        const header = rows[0] ?? [];
+        const body = rows.slice(1);
 
-        if (id === 'paid') paidRows = body;
-        else if (id === 'free') freeRows = body;
-        else usersRows = body;
+        if (id === 'paid') {
+            paidHeader = header;
+            paidBody = body;
+            paidMeta = { file: f.name, sheetName: 'CSV', headerRowIndex: 0 };
+        } else {
+            freeHeader = header;
+            freeBody = body;
+            freeMeta = { file: f.name, sheetName: 'CSV', headerRowIndex: 0 };
+        }
 
         text('#stat', `파일 로드 완료`);
         toast(`${f.name} 불러오기 성공 (${body.length}행)`);
@@ -189,276 +384,234 @@ async function onFile(e) {
 
     refresh();
 }
-function convertToInt(value) {
-    if (typeof value !== 'string') return 0;
-    // ₩, $, , , 공백 등 모두 제거
-    const num = value.replace(/[₩$,,\s]/g, '');
-    // 숫자로 변환 (NaN 방지)
-    return Number(num) || 0;
-}
 
-function normalizeName(s) {
-    return String(s ?? '')
-        .trim()
-        .replace(/\s+/g, '') // 모든 공백 제거
-        .replace(/[^\p{L}\p{N}]/gu, '') // 문자/숫자만 남김(한글 포함)
-        .toLowerCase();
-}
-
+// =====================
+// 매칭
+// =====================
 function runMatch() {
-    const out = [
-        ['이름(B)', '이메일(C)', '전화번호(D)', '유입경로(F)', '결제금액(G)', '가입일', '매칭기준'],
-    ];
+    // =========================
+    // 내용 기반 열 추정(결제자 파일용)
+    // =========================
+    const PHONE_CANDS = ['전화번호', '연락처', '휴대폰', '휴대전화', '핸드폰'];
+    const AMOUNT_CANDS = ['최종금액', '최종결제금액', '최종 금액', '결제금액', '결제 금액'];
+    const STATUS_CANDS = ['결제상태', '상태'];
+    const NAME_CANDS_FREE = ['이름', '성함', '신청자', '구매자'];
 
-    const paidMapByPhone = new Map(); // phone -> source
-    const paidMapByName = new Map(); // name -> source
+    const looksLikePhone = (v) => {
+        const p = normalizeDigits(v);
+        return p && (p.length === 10 || p.length === 11);
+    };
 
-    const usersMapByPhone = new Map(); // phone -> 가입일
-    const usersMapByName = new Map(); // name -> 가입일
+    const guessPhoneColByContent = (rows, scanRows = 400) => {
+        const sample = rows.slice(0, scanRows);
+        const maxCols = Math.max(...sample.map((r) => (Array.isArray(r) ? r.length : 0)), 0);
+        let bestIdx = -1;
+        let bestScore = 0;
 
-    const typeMap = new Map(); // type -> [matchedCount, sum, totalCount]
-    let matched = 0;
-
-    // ✅ usersRows → phone/name map
-    if (usersRows.length > 0) {
-        for (const r of usersRows) {
-            const phone = normalizeDigits(r[1]); // users: phone
-            const name = normalizeName(r[0]); // users: name (필요하면 인덱스 조정)
-            const createdAt = r[2] || ''; // users: 가입일
-
-            if (phone) usersMapByPhone.set(phone, createdAt);
-            if (name && createdAt) usersMapByName.set(name, createdAt);
+        for (let c = 0; c < maxCols; c++) {
+            let hit = 0;
+            for (const r of sample) if (Array.isArray(r) && looksLikePhone(r[c])) hit++;
+            if (hit > bestScore) {
+                bestScore = hit;
+                bestIdx = c;
+            }
         }
+        return { idx: bestIdx, score: bestScore };
+    };
+
+    const guessAmountColByContent = (rows, scanRows = 400) => {
+        const sample = rows.slice(0, scanRows);
+        const maxCols = Math.max(...sample.map((r) => (Array.isArray(r) ? r.length : 0)), 0);
+        let bestIdx = -1;
+        let bestScore = 0;
+
+        for (let c = 0; c < maxCols; c++) {
+            let pos = 0;
+            for (const r of sample) if (Array.isArray(r) && moneyToNumber(r[c]) > 0) pos++;
+            if (pos > bestScore) {
+                bestScore = pos;
+                bestIdx = c;
+            }
+        }
+        return { idx: bestIdx, score: bestScore };
+    };
+
+    const paidPhoneNonEmpty = (idx) =>
+        paidBody.slice(0, 200).reduce((acc, r) => {
+            if (!Array.isArray(r)) return acc;
+            return normalizeDigits(r[idx]) ? acc + 1 : acc;
+        }, 0);
+
+    const paidAmountPositive = (idx) =>
+        paidBody.slice(0, 200).reduce((acc, r) => {
+            if (!Array.isArray(r)) return acc;
+            return moneyToNumber(r[idx]) > 0 ? acc + 1 : acc;
+        }, 0);
+
+    // =========================
+    // 1) 신청자(첫 파일)에서 이름/전화번호 열 찾기
+    // =========================
+    const freeNameIdx = findColIndex(freeHeader, NAME_CANDS_FREE);
+    const freePhoneIdx = findColIndex(freeHeader, [
+        '연락처',
+        '전화번호',
+        '휴대폰',
+        '휴대전화',
+        '핸드폰',
+    ]);
+
+    if (freeNameIdx < 0) return alert('첫번째 파일(신청자)에서 “이름” 컬럼을 찾지 못했어요.');
+    if (freePhoneIdx < 0)
+        return alert('첫번째 파일(신청자)에서 “연락처/전화번호” 컬럼을 찾지 못했어요.');
+
+    // =========================
+    // 2) 결제자(두번째 파일)에서 전화번호/최종금액 열 찾기
+    // =========================
+    let paidPhoneIdx = findColIndex(paidHeader, PHONE_CANDS);
+    let paidAmountIdx = findColIndex(paidHeader, AMOUNT_CANDS);
+    const paidStatusIdx = findColIndex(paidHeader, STATUS_CANDS);
+
+    // 헤더로 잡힌 열이 실제로 값이 있는지 검증 -> 없으면 내용 기반 재추정
+    const phoneOk = paidPhoneIdx >= 0 ? paidPhoneNonEmpty(paidPhoneIdx) >= 5 : false;
+    const amountOk = paidAmountIdx >= 0 ? paidAmountPositive(paidAmountIdx) >= 5 : false;
+
+    if (!phoneOk) {
+        const g = guessPhoneColByContent(paidBody, 600);
+        if (g.idx >= 0 && g.score > 0) paidPhoneIdx = g.idx;
+    }
+    if (!amountOk) {
+        const g = guessAmountColByContent(paidBody, 600);
+        if (g.idx >= 0 && g.score > 0) paidAmountIdx = g.idx;
     }
 
-    // ✅ paidRows → phone/name map + source별 totalCount
-    for (const r of paidRows) {
-        const phone = normalizeDigits(r[6]); // paid: phone
-        const name = normalizeName(r[1]); // paid: name (필요하면 인덱스 조정)
-        const source = (r[3] || '기타').trim();
+    // 최후 fallback: 캡처 기준 E=4, O=14
+    if (paidPhoneIdx < 0) paidPhoneIdx = 4;
+    if (paidAmountIdx < 0) paidAmountIdx = 14;
 
-        if (phone) paidMapByPhone.set(phone, source);
-        if (name) paidMapByName.set(name, source);
+    if (paidPhoneIdx < 0) return alert('두번째 파일(결제자)에서 “전화번호” 열을 찾지 못했어요.');
+    if (paidAmountIdx < 0) return alert('두번째 파일(결제자)에서 “최종금액” 열을 찾지 못했어요.');
 
-        // 유입경로별 전체 카운트
-        if (typeMap.has(source)) {
-            const [matchedCount, sum, totalCount] = typeMap.get(source);
-            typeMap.set(source, [matchedCount, sum, totalCount + 1]);
-        } else {
-            typeMap.set(source, [0, 0, 1]);
+    // =========================
+    // 3) 결제자 Map 만들기: phone -> sum(최종금액 합계)
+    // =========================
+    const paidSumMap = new Map(); // phone -> sum
+    for (const r of paidBody) {
+        if (!Array.isArray(r)) continue;
+
+        const phone = normalizeDigits(r[paidPhoneIdx]);
+        if (!phone) continue;
+
+        const amt = moneyToNumber(r[paidAmountIdx]);
+        if (amt <= 0) continue;
+
+        // 결제상태가 있으면 환불/취소 제외
+        if (paidStatusIdx >= 0) {
+            const st = String(r[paidStatusIdx] ?? '').trim();
+            if (st.includes('환불') || st.includes('취소')) continue;
         }
+
+        paidSumMap.set(phone, (paidSumMap.get(phone) || 0) + amt);
     }
 
-    // ✅ freeRows 순회 (phone 우선 → name fallback)
-    for (const r of freeRows) {
-        const freePhone = normalizeDigits(r[4]); // free: phone
-        const freeName = normalizeName(r[3]); // free: name
-        const amount = convertToInt(r[14]);
-        if (amount <= 0) continue;
+    // =========================
+    // 4) 결과 테이블: 이름 / 핸드폰번호 / 결제금액(합계)
+    //    - 신청자 파일 기준으로 행 생성
+    //    - 매칭 안 되면 결제금액 0
+    // =========================
+    const out = [['이름', '핸드폰번호', '결제금액']];
 
-        let type = '기타';
-        let joinedDate = '';
-        let matchBasis = '미매칭';
+    let matchedCount = 0;
+    let totalAmount = 0;
 
-        // 1) 전화번호 매칭
-        if (freePhone && paidMapByPhone.has(freePhone)) {
-            type = paidMapByPhone.get(freePhone);
-            joinedDate = usersMapByPhone.get(freePhone) || '';
-            matchBasis = '전화번호';
-            matched++;
-        }
-        // 2) 전화번호 없거나 매칭 실패 → 이름 매칭
-        else if (freeName && paidMapByName.has(freeName)) {
-            type = paidMapByName.get(freeName);
-            // 가입일도 이름으로 fallback
-            joinedDate =
-                (freePhone ? usersMapByPhone.get(freePhone) : '') ||
-                usersMapByName.get(freeName) ||
-                '';
-            matchBasis = '이름';
-            matched++;
-        } else {
-            // 가입일만이라도 채우기(폰만 있으면)
-            joinedDate = (freePhone ? usersMapByPhone.get(freePhone) : '') || '';
+    for (const r of freeBody) {
+        const name = String(r[freeNameIdx] ?? '').trim();
+        const rawPhone = String(r[freePhoneIdx] ?? '').trim();
+        const phone = normalizeDigits(rawPhone);
+
+        const sum = phone && paidSumMap.has(phone) ? paidSumMap.get(phone) : 0;
+
+        if (sum > 0) {
+            matchedCount++;
+            totalAmount += sum;
         }
 
-        // typeMap 업데이트(매칭 카운트/금액)
-        if (typeMap.has(type)) {
-            const [matchedCount, sum, totalCount] = typeMap.get(type);
-            typeMap.set(type, [matchedCount + 1, sum + amount, totalCount]);
-        } else {
-            typeMap.set(type, [1, amount, 0]);
-        }
-
-        out.push([
-            r[3] ?? '', // 이름
-            r[5] ?? '', // 이메일
-            r[4] ?? '', // 전화번호
-            type, // 유입경로
-            r[14], // 결제금액(원본)
-            joinedDate, // 가입일
-            matchBasis, // ✅ 매칭기준(전화번호/이름)
-        ]);
+        out.push([name, rawPhone, sum]);
     }
 
     resultRows = out;
     render(out);
 
-    // 기존 통계 렌더링 로직 그대로 사용
+    // =========================
+    // 5) 요약(건수/합계)
+    // =========================
     const statDiv = document.querySelector('.stat');
-    const counts = Array.from(typeMap.entries());
+    statDiv.innerHTML = `
+      <div style="padding:10px; background:#eef6ff; border:1px solid #cfe5ff; border-radius:10px; margin-bottom:12px;">
+        <b>사용중인 결제자 열</b><br/>
+        전화번호 idx: <b>${paidPhoneIdx}</b> (캡처 기준 E=4) / 최종금액 idx: <b>${paidAmountIdx}</b> (캡처 기준 O=14)<br/>
+        전화번호 유효(샘플200): <b>${paidPhoneNonEmpty(
+            paidPhoneIdx
+        )}</b> / 금액>0(샘플200): <b>${paidAmountPositive(paidAmountIdx)}</b>
+      </div>
 
-    let totalAmountPrice = 0;
-    counts.forEach(([_, [, sum]]) => {
-        totalAmountPrice += sum;
-    });
-
-    const paidKeys = ['메타', '구글'];
-
-    function isOtherKey(key) {
-        if (!key) return true;
-        const k = String(key).trim();
-        if (k === '' || k === '-' || k.includes('기타')) return true;
-        return false;
-    }
-
-    const paidList = [];
-    const organicList = [];
-    const otherList = [];
-
-    counts.forEach(([key, [matchedCount, sum, totalCount]]) => {
-        if (paidKeys.includes(key)) {
-            paidList.push([key, matchedCount, sum, totalCount]);
-            return;
-        }
-        if (isOtherKey(key)) {
-            otherList.push([key || '기타', matchedCount, sum, totalCount]);
-            return;
-        }
-        organicList.push([key, matchedCount, sum, totalCount]);
-    });
-
-    function makeTable(title, rows) {
-        let html = `
-      <h3 style="margin:10px 0;">${title}</h3>
-      <table style="width:100%; border-collapse:collapse; margin-bottom:15px; font-size:15px;">
-      <thead>
-        <tr style="background:#f6f6f6;">
-          <th style="padding:8px;">유입경로</th>
-          <th style="padding:8px; text-align:right;">매칭</th>
-          <th style="padding:8px; text-align:right;">전환률</th>
-          <th style="padding:8px; text-align:right;">결제금액 합계</th>
-          <th style="padding:8px; text-align:right;">비중</th>
-        </tr>
-      </thead>
-      <tbody>
+      <h3 style="margin:10px 0;">요약</h3>
+      <p style="margin:6px 0;">매칭 건수(결제금액 > 0): <b>${matchedCount.toLocaleString()}</b>건</p>
+      <p style="margin:6px 0;">총 결제금액 합계: <b>₩${totalAmount.toLocaleString()}</b></p>
     `;
-
-        rows.forEach(([key, matchedCount, sum, totalCount]) => {
-            const ratio = totalCount > 0 ? ((matchedCount / totalCount) * 100).toFixed(1) : '0.0';
-            const portion =
-                totalAmountPrice > 0 ? ((sum / totalAmountPrice) * 100).toFixed(1) : '0.0';
-
-            html += `
-        <tr style="border-bottom:1px solid #eee;">
-          <td style="padding:8px;">${key}</td>
-          <td style="padding:8px; text-align:right;">${matchedCount}/${totalCount}</td>
-          <td style="padding:8px; text-align:right;">${ratio}%</td>
-          <td style="padding:8px; text-align:right;">${sum.toLocaleString()}원</td>
-          <td style="padding:8px; text-align:right;">${portion}%</td>
-        </tr>
-      `;
-        });
-
-        html += `</tbody></table>`;
-        return html;
-    }
-
-    function calcSummary(list) {
-        let matched = 0;
-        let total = 0;
-        let amount = 0;
-
-        list.forEach(([_, mCount, sum, tCount]) => {
-            matched += mCount;
-            total += tCount;
-            amount += sum;
-        });
-
-        const ratio = total > 0 ? ((matched / total) * 100).toFixed(1) : '0.0';
-        return { matched, total, amount, ratio };
-    }
-
-    const paidSummary = calcSummary(paidList);
-    const organicSummary = calcSummary(organicList);
-
-    let html = '';
-    html += makeTable('① 페이드', paidList);
-    html += makeTable('② 오가닉', organicList);
-    html += makeTable('③ 기타 (기존 회원)', otherList);
-
-    html += `
-    <h3 style="margin-top:20px;">전체 요약</h3>
-    <p><b>페이드 요약</b> : ${paidSummary.matched}/${paidSummary.total}
-      전환률: ${paidSummary.ratio}%
-      결제금액 합계: ${paidSummary.amount.toLocaleString()}원</p>
-
-    <p><b>오가닉 요약</b> : ${organicSummary.matched}/${organicSummary.total}
-      전환률: ${organicSummary.ratio}%
-      결제금액 합계: ${organicSummary.amount.toLocaleString()}원</p>
-
-    <p><b>전체 결제금액 합계</b> : ${totalAmountPrice.toLocaleString()}원</p>
-  `;
-
-    statDiv.innerHTML = html;
 
     const has = out.length > 1;
     $('#dlCsv').disabled = !has;
     $('#dlXls').disabled = !has;
-    text('#stat', `매칭 완료: ${matched}건`);
+
+    text('#stat', `완료: ${matchedCount}건 / ₩${totalAmount.toLocaleString()}`);
+    toast(`완료: ${matchedCount}건 매칭`);
 }
 
+// =====================
+// 렌더/다운로드/리셋
+// =====================
 function render(rows) {
     const wrap = $('#tableWrap');
-    if (rows.length === 0) {
+    if (!wrap) return;
+
+    if (!rows || rows.length === 0) {
         wrap.innerHTML = '';
         return;
     }
+
     const [h, ...b] = rows;
     const thead = '<thead><tr>' + h.map((x) => `<th>${x}</th>`).join('') + '</tr></thead>';
     const tbody =
         '<tbody>' +
         b.map((r) => '<tr>' + r.map((c) => `<td>${c ?? ''}</td>`).join('') + '</tr>').join('') +
         '</tbody>';
+
     wrap.innerHTML = '<table>' + thead + tbody + '</table>';
 }
 
-function getBaseName() {
-    let n = ($('#fname').value || '').trim();
-    if (!n) n = 'matched';
-    return n;
-}
-
-// === Excel 안전 CSV (UTF-8 + BOM, 전화번호 텍스트 강제) ===
 function downloadCSV() {
     if (resultRows.length <= 1) return;
-    const safe = resultRows.map((r, i) =>
-        i === 0 ? r : [r[0], r[1], "'" + (r[2] ?? ''), r[3], r[4], r[5]]
-    );
+
+    const safe = resultRows.map((r, i) => {
+        if (i === 0) return r;
+        return [r[0], r[1], "'" + (r[2] ?? ''), r[3], r[4], r[5]];
+    });
+
     const csv = toCSV(safe);
-    const bom = '\uFEFF'; // BOM 추가 → 엑셀이 UTF-8로 인식
+    const bom = '\uFEFF';
     downloadBlob(getBaseName() + '.csv', new Blob([bom, csv], { type: 'text/csv;charset=utf-8' }));
 }
 
-// === Excel(.xls) — HTML 기반 내보내기, 전화번호 텍스트 서식 ===
 function downloadXLS() {
     if (resultRows.length <= 1) return;
+
     const [h, ...b] = resultRows;
     const esc = (s) =>
         String(s ?? '')
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
+
     const head = '<tr>' + h.map((x) => `<th>${esc(x)}</th>`).join('') + '</tr>';
     const body = b
         .map(
@@ -473,30 +626,45 @@ function downloadXLS() {
                 '</tr>'
         )
         .join('');
-    const html = `<!doctype html><html><head><meta charset="UTF-8"><title>matched</title></head><body><table border="1">${head}${body}</table></body></html>`;
+
+    const html = `<!doctype html><html><head><meta charset="UTF-8"><title>${esc(
+        getBaseName()
+    )}</title></head><body><table border="1">${head}${body}</table></body></html>`;
+
     downloadBlob(getBaseName() + '.xls', new Blob([html], { type: 'application/vnd.ms-excel' }));
 }
 
 function resetAll() {
-    paidRows = [];
-    freeRows = [];
+    paidHeader = [];
+    paidBody = [];
+    freeHeader = [];
+    freeBody = [];
     resultRows = [];
+    paidMeta = null;
+    freeMeta = null;
+
     $('#paid').value = '';
     $('#free').value = '';
     $('#run').disabled = true;
     $('#dlCsv').disabled = true;
     $('#dlXls').disabled = true;
     $('#tableWrap').innerHTML = '';
+    const statDiv = document.querySelector('.stat');
+    if (statDiv) statDiv.innerHTML = '';
+
     text('#stat', '대기 중');
     toast('초기화 완료');
+    refresh();
 }
 
-// ===== 바인딩 =====
+// =====================
+// 바인딩
+// =====================
 $('#paid').addEventListener('change', onFile);
 $('#free').addEventListener('change', onFile);
-$('#users').addEventListener('change', onFile);
-// $('#matchType').addEventListener('change', refresh);
 $('#run').addEventListener('click', runMatch);
 $('#dlCsv').addEventListener('click', downloadCSV);
 $('#dlXls').addEventListener('click', downloadXLS);
 $('#reset').addEventListener('click', resetAll);
+
+refresh();
