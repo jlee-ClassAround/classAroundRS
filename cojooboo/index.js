@@ -113,11 +113,22 @@ function downloadBlob(name, blob) {
     setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 function normalizeDigits(s) {
-    const d = String(s ?? '').replace(/\D+/g, '');
+    let d = String(s ?? '').replace(/\D+/g, '');
     if (!d) return '';
-    let out = d.startsWith('82') ? '0' + d.slice(2) : d;
-    if (out.length > 11) out = out.slice(-11);
-    return out;
+
+    // +82 / 82 처리
+    if (d.startsWith('82')) d = '0' + d.slice(2);
+
+    // 엑셀 숫자형으로 010이 10으로 날아간 케이스 보정 (010xxxxxxxx -> 10xxxxxxxx)
+    if (d.length === 10 && d.startsWith('10')) d = '0' + d;
+
+    // 너무 길면 뒤 11자리만
+    if (d.length > 11) d = d.slice(-11);
+
+    // 휴대폰 번호 형태만 통과(01로 시작, 10~11자리)
+    if (!/^01\d{8,9}$/.test(d)) return '';
+
+    return d;
 }
 
 // ===== 상태 =====
@@ -205,23 +216,25 @@ function runMatch() {
     const usersMap = new Map(); // phone -> 가입일
     let matched = 0;
 
-    // ✅ usersRows → Map으로 변환
+    // ✅ usersRows → phone 기준 (이미 폰 기준이라 그대로)
     if (usersRows.length > 0) {
         for (const r of usersRows) {
             const phone = normalizeDigits(r[1]);
-            const createdAt = r[2] || ''; // 가입일 열 (3번째)
-
+            const createdAt = r[2] || '';
             if (phone) usersMap.set(phone, createdAt);
         }
     }
 
-    // ✅ paidRows → Map으로 변환
+    // ✅ paidRows → phone 기준으로만 유입경로 맵 생성
     for (const r of paidRows) {
-        const phone = normalizeDigits(r[6]);
-        const source = (r[3] || '기타').trim();
-        if (phone) paidMap.set(phone, source);
+        const phone = normalizeDigits(r[6]); // ⚠️ 너 파일 구조에 맞는 인덱스 유지
+        const source = String(r[3] || '기타').trim(); // ⚠️ 인덱스 유지
 
-        // 유입경로별 전체 카운트 추가
+        if (!phone) continue;
+
+        paidMap.set(phone, source);
+
+        // 유입경로별 전체 카운트(결제자 파일 기준)
         if (typeMap.has(source)) {
             const [matchedCount, sum, totalCount] = typeMap.get(source);
             typeMap.set(source, [matchedCount, sum, totalCount + 1]);
@@ -230,17 +243,22 @@ function runMatch() {
         }
     }
 
-    // ✅ freeRows 순회
+    // ✅ freeRows 순회: "검증/매칭"은 오직 전화번호로만
     for (const r of freeRows) {
-        const p = normalizeDigits(r[4]);
-        const amount = convertToInt(r[14]);
+        const rawPhone = r[4] ?? ''; // ⚠️ 인덱스 유지
+        const p = normalizeDigits(rawPhone);
+        const amount = convertToInt(String(r[14] ?? '')); // ⚠️ XLSX 숫자셀 방지
+
         if (amount <= 0) continue;
 
-        const type = p && paidMap.has(p) ? paidMap.get(p) : '기타';
-        const joinedDate = usersMap.get(p) || ''; // ✅ 가입일 가져오기
+        const isMatched = !!(p && paidMap.has(p)); // ✅ 폰번호로만 검증
 
-        if (p && paidMap.has(p)) matched++;
+        const type = isMatched ? paidMap.get(p) : '기타';
+        const joinedDate = p ? usersMap.get(p) || '' : '';
 
+        if (isMatched) matched++;
+
+        // typeMap 업데이트(매칭카운트/금액)
         if (typeMap.has(type)) {
             const [matchedCount, sum, totalCount] = typeMap.get(type);
             typeMap.set(type, [matchedCount + 1, sum + amount, totalCount]);
@@ -248,72 +266,53 @@ function runMatch() {
             typeMap.set(type, [1, amount, 0]);
         }
 
-        // ✅ 가입일 열 추가
         out.push([
-            r[3] ?? '', // 이름
-            r[5] ?? '', // 이메일
-            r[4] ?? '', // 전화번호
+            r[3] ?? '', // 이름(출력용)
+            r[5] ?? '', // 이메일(출력용)
+            rawPhone ?? '', // 전화번호(원본 출력)
             type, // 유입경로
-            r[14], // 결제금액
-            joinedDate, // 가입일 (있으면 표시, 없으면 '')
+            r[14] ?? '', // 결제금액(원본)
+            joinedDate, // 가입일
         ]);
     }
 
     resultRows = out;
     render(out);
 
-    // ✅ ③ 통계 렌더링
+    // ✅ 통계 렌더링(기존 그대로)
     const statDiv = document.querySelector('.stat');
     const counts = Array.from(typeMap.entries());
 
-    // 총합 계산
     let totalAmountPrice = 0;
     counts.forEach(([_, [, sum]]) => {
         totalAmountPrice += sum;
     });
 
-    // ==============================
-    // 분류 기준
-    // ==============================
-    // Paid - 고정
     const paidKeys = ['메타', '구글'];
 
-    // 기타 판단 함수
     function isOtherKey(key) {
-        if (!key) return true; // null, undefined, 빈 문자열
+        if (!key) return true;
         const k = String(key).trim();
-        if (k === '') return true;
-        if (k === '-') return true;
-        if (k.includes('기타')) return true;
+        if (k === '' || k === '-' || k.includes('기타')) return true;
         return false;
     }
 
-    // 카테고리 배열
     const paidList = [];
     const organicList = [];
     const otherList = [];
 
-    // 전체 분류
     counts.forEach(([key, [matchedCount, sum, totalCount]]) => {
-        // ① Paid
         if (paidKeys.includes(key)) {
             paidList.push([key, matchedCount, sum, totalCount]);
             return;
         }
-
-        // ② 기타 (공백/없음/기타)
         if (isOtherKey(key)) {
             otherList.push([key || '기타', matchedCount, sum, totalCount]);
             return;
         }
-
-        // ③ 아니면 전부 오가닉
         organicList.push([key, matchedCount, sum, totalCount]);
     });
 
-    // ==============================
-    // 테이블 생성 유틸
-    // ==============================
     function makeTable(title, rows) {
         let html = `
         <h3 style="margin:10px 0;">${title}</h3>
@@ -350,9 +349,6 @@ function runMatch() {
         return html;
     }
 
-    // ==============================
-    // 요약 계산
-    // ==============================
     function calcSummary(list) {
         let matched = 0;
         let total = 0;
@@ -365,31 +361,17 @@ function runMatch() {
         });
 
         const ratio = total > 0 ? ((matched / total) * 100).toFixed(1) : '0.0';
-
         return { matched, total, amount, ratio };
     }
 
-    // 요약 데이터
     const paidSummary = calcSummary(paidList);
     const organicSummary = calcSummary(organicList);
 
-    // ==============================
-    // 모든 컨텐츠 조립
-    // ==============================
     let html = '';
-
-    // 테이블 1. Paid
     html += makeTable('① 페이드', paidList);
-
-    // 테이블 2. 오가닉
     html += makeTable('② 오가닉', organicList);
-
-    // 테이블 3. 기타
     html += makeTable('③ 기타 (기존 회원)', otherList);
 
-    // ==============================
-    // 전체 요약 섹션
-    // ==============================
     html += `
 <h3 style="margin-top:20px;">전체 요약</h3>
 <p><b>페이드 요약</b> : ${paidSummary.matched}/${paidSummary.total}  
@@ -402,8 +384,6 @@ function runMatch() {
 
 <p><b>전체 결제금액 합계</b> : ${totalAmountPrice.toLocaleString()}원</p>
 `;
-
-    statDiv.innerHTML = html;
 
     statDiv.innerHTML = html;
 
