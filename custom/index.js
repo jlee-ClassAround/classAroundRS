@@ -1,4 +1,3 @@
-// ===== 유틸리티 =====
 const $ = (sel) => document.querySelector(sel);
 function toast(msg) {
     const t = $('#toast');
@@ -18,60 +17,47 @@ function normalizeDigits(s) {
 }
 
 function parseCSV(text) {
-    const delims = [',', ';', '\t'];
-    let delim = ',';
-    const lines = text.split(/\r?\n/).slice(0, 3);
-    let best = -1;
-    for (const d of delims) {
-        const s = lines.map((l) => l.split(d).length).reduce((a, b) => a + b, 0);
-        if (s > best) {
-            best = s;
-            delim = d;
-        }
-    }
-    const out = [];
+    const rows = [];
     let row = [];
-    let i = 0;
-    let q = false;
     let field = '';
-    while (i < text.length) {
-        const c = text[i++];
+    let q = false;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
         if (q) {
-            if (c === '"') {
-                if (text[i] === '"') {
-                    field += '"';
-                    i++;
-                } else q = false;
-            } else field += c;
+            if (c === '"' && text[i + 1] === '"') {
+                field += '"';
+                i++;
+            } else if (c === '"') q = false;
+            else field += c;
         } else {
             if (c === '"') q = true;
-            else if (c === delim) {
+            else if (c === ',') {
                 row.push(field);
                 field = '';
-            } else if (c === '\n') {
-                row.push(field);
-                out.push(row);
-                row = [];
-                field = '';
-            } else if (c === '\r') {
+            } else if (c === '\n' || c === '\r') {
+                if (field || row.length) {
+                    row.push(field);
+                    rows.push(row);
+                    row = [];
+                    field = '';
+                }
             } else field += c;
         }
     }
-    if (field !== '' || row.length) {
+    if (field || row.length) {
         row.push(field);
-        out.push(row);
+        rows.push(row);
     }
-    return out.filter((r) => r.some((c) => String(c).trim() !== ''));
+    return rows.filter((r) => r.some((c) => c.trim() !== ''));
 }
 
 function convertToInt(v) {
     return Number(String(v ?? '').replace(/[₩$,,\s]/g, '')) || 0;
 }
 
-// ===== 상태 관리 =====
-let paidFiles = []; // { id, rows: [], label: '1기' }
+let paidFiles = [];
 let freeRows = [];
-let resultSummary = []; // CSV용 요약 데이터 저장
+let resultSummaryRows = [];
 
 function createPaidFileInput() {
     const id = Date.now();
@@ -83,13 +69,15 @@ function createPaidFileInput() {
     }기"><input type="file" class="paid-file" accept=".csv .xlsx"><button class="remove-paid-btn">삭제</button>`;
 
     div.querySelector('.paid-file').addEventListener('change', async (e) => {
-        const f = e.target.files?.[0];
-        if (!f) return;
-        const rows = await readFileData(f);
+        const rows = await readFileData(e.target.files[0]);
         const item = paidFiles.find((p) => p.id === id);
         if (item) item.rows = rows.slice(1);
-        toast(`${f.name} 로드 완료`);
+        toast('파일 로드 완료');
         refresh();
+    });
+    div.querySelector('.paid-label').addEventListener('input', (e) => {
+        const item = paidFiles.find((p) => p.id === id);
+        if (item) item.label = e.target.value;
     });
     div.querySelector('.remove-paid-btn').addEventListener('click', () => {
         div.remove();
@@ -101,6 +89,7 @@ function createPaidFileInput() {
 }
 
 async function readFileData(f) {
+    if (!f) return [];
     if (f.name.endsWith('.xlsx') || f.name.endsWith('.xls')) {
         const ab = await f.arrayBuffer();
         const wb = XLSX.read(ab, { type: 'array' });
@@ -115,74 +104,99 @@ async function readFileData(f) {
 }
 
 function refresh() {
-    const hasPaid = paidFiles.some((p) => p.rows.length > 0);
-    $('#run').disabled = !(hasPaid && freeRows.length > 0);
+    $('#run').disabled = !(paidFiles.some((p) => p.rows.length > 0) && freeRows.length > 0);
 }
 
-// ===== 👑 분석 실행 (기수별 + 유입경로별) =====
+// ===== 👑 분석 실행 (기수별 기타 배분 로직) =====
 function runMatch() {
-    const summaryData = [];
-    const paidMap = new Map(); // phone -> { batch, source }
+    const paidMap = new Map(); // phone -> { batchLabel, source }
+    const batchPeriods = new Map(); // batchLabel -> { minDate, maxDate }
 
-    // 1. 코어데브 기수별 세부 유입경로 데이터 구축
+    // 1. 기수별 트래킹 맵 구성
     const batchStats = paidFiles
         .filter((p) => p.rows.length > 0)
         .map((file) => {
-            const sources = new Map(); // sourceName -> { totalInSource, matchedInSource, amountInSource }
-
+            const sources = new Map();
             file.rows.forEach((r) => {
                 const phone = normalizeDigits(r[6]); // G열
                 const source = String(r[3] || '기타').trim(); // D열
-
                 if (phone) {
-                    if (!paidMap.has(phone)) {
+                    if (!paidMap.has(phone))
                         paidMap.set(phone, { batchLabel: file.label, source: source });
-                    }
-
-                    // 유입경로별 인원수 집계
                     if (!sources.has(source))
                         sources.set(source, { total: 0, matched: 0, amount: 0 });
                     sources.get(source).total++;
                 }
             });
-            return { label: file.label, sources: sources };
+            return { label: file.label, sources: sources, otherCount: 0, otherAmount: 0 };
         });
 
-    let totalMatched = 0;
-    let grandTotalSales = 0;
-
-    // 2. 결제자 데이터 대조
+    // 2. 결제자 대조 및 기수 기간 자동 감지
+    const tempPayments = [];
     freeRows.forEach((r) => {
-        const p = normalizeDigits(r[4]); // E열
-        const amount = convertToInt(r[14]); // O열
-        if (amount <= 0) return;
+        const payDate = new Date(r[0]).getTime(); // A열 결제일자
+        const p = normalizeDigits(r[4]); // E열 전화번호
+        const amount = convertToInt(r[14]); // O열 금액
+        if (amount <= 0 || isNaN(payDate)) return;
 
         const match = p ? paidMap.get(p) : null;
         if (match) {
-            totalMatched++;
-            grandTotalSales += amount;
+            // 기수 기간 업데이트
+            const period = batchPeriods.get(match.batchLabel) || { min: Infinity, max: -Infinity };
+            batchPeriods.set(match.batchLabel, {
+                min: Math.min(period.min, payDate),
+                max: Math.max(period.max, payDate),
+            });
+        }
+        tempPayments.push({ date: payDate, phone: p, amount, match });
+    });
 
-            // 해당 기수의 해당 유입경로에 데이터 누적
-            const batch = batchStats.find((b) => b.label === match.batchLabel);
-            const sourceStat = batch.sources.get(match.source);
+    let grandTotalSales = 0;
+
+    // 3. 데이터 집계 (매칭 vs 자동 배분 기타)
+    tempPayments.forEach((pay) => {
+        grandTotalSales += pay.amount;
+
+        if (pay.match) {
+            // 번호 매칭 성공 시
+            const batch = batchStats.find((b) => b.label === pay.match.batchLabel);
+            const sourceStat = batch.sources.get(pay.match.source);
             if (sourceStat) {
                 sourceStat.matched++;
-                sourceStat.amount += amount;
+                sourceStat.amount += pay.amount;
+            }
+        } else {
+            // 번호 매칭 실패 -> 날짜 기반으로 해당 기수 '기타'로 배정
+            let assignedBatch = null;
+            for (const [label, range] of batchPeriods.entries()) {
+                if (pay.date >= range.min && pay.date <= range.max) {
+                    assignedBatch = batchStats.find((b) => b.label === label);
+                    break;
+                }
+            }
+
+            if (assignedBatch) {
+                assignedBatch.otherCount++;
+                assignedBatch.otherAmount += pay.amount;
+            } else {
+                // 어떤 기간에도 해당 안 되면 리스트의 마지막 기수에 배정하거나 별도 처리 (여기서는 마지막 기수 가정)
+                const lastBatch = batchStats[batchStats.length - 1];
+                lastBatch.otherCount++;
+                lastBatch.otherAmount += pay.amount;
             }
         }
     });
 
     renderSummary(batchStats, grandTotalSales);
-
     $('#dlCsv').disabled = false;
     $('#dlXls').disabled = false;
-    $('#stat').textContent = `분석 완료: 총 ${totalMatched}건 매칭`;
+    $('#stat').textContent = `분석 완료: 총 결제액 ${grandTotalSales.toLocaleString()}원`;
 }
 
-function renderSummary(batchStats, grandTotalSales) {
-    let html = `<h3>📊 상세 검수 리포트 (기수별 유입경로)</h3>
+function renderSummary(batchStats, grandTotal) {
+    let html = `<h3>📊 상세 성과 리포트 (기수별 기타 포함)</h3>
     <table><thead><tr>
-        <th>기수</th><th>유입경로</th><th>매칭 / 트래킹</th><th>전환율</th><th>결제액 합계</th><th>매출 비중</th>
+        <th>기수</th><th>유입경로</th><th>매칭 / 트래킹</th><th>전환율</th><th>결제금액</th><th>매출 비중</th>
     </tr></thead><tbody>`;
 
     const csvRows = [
@@ -190,43 +204,75 @@ function renderSummary(batchStats, grandTotalSales) {
     ];
 
     batchStats.forEach((batch) => {
-        // 기수별 헤더 행
-        html += `<tr class="group-header"><td colspan="6">${batch.label} 전체 성과</td></tr>`;
+        html += `<tr class="group-header"><td colspan="6">${batch.label} 상세 성과</td></tr>`;
 
-        // 유입경로별 정렬 (결제액 순)
-        const sortedSources = Array.from(batch.sources.entries()).sort(
+        let bMatched = 0;
+        let bTracking = 0;
+        let bAmount = 0;
+        const sorted = Array.from(batch.sources.entries()).sort(
             (a, b) => b[1].amount - a[1].amount
         );
 
-        sortedSources.forEach(([sourceName, data]) => {
+        // 1. 광고 유입 성과
+        sorted.forEach(([source, data]) => {
             const rate = data.total > 0 ? ((data.matched / data.total) * 100).toFixed(1) : '0.0';
-            const portion =
-                grandTotalSales > 0 ? ((data.amount / grandTotalSales) * 100).toFixed(1) : '0.0';
-
-            html += `<tr>
-                <td>${batch.label}</td>
-                <td>${sourceName}</td>
-                <td>${data.matched} / ${data.total}</td>
-                <td>${rate}%</td>
-                <td>${data.amount.toLocaleString()}원</td>
-                <td>${portion}%</td>
-            </tr>`;
-
+            const portion = grandTotal > 0 ? ((data.amount / grandTotal) * 100).toFixed(1) : '0.0';
+            html += `<tr><td>${batch.label}</td><td>${source}</td><td>${data.matched} / ${
+                data.total
+            }</td><td>${rate}%</td><td>${data.amount.toLocaleString()}원</td><td>${portion}%</td></tr>`;
             csvRows.push([
                 batch.label,
-                sourceName,
+                source,
                 data.matched,
                 data.total,
                 `${rate}%`,
                 data.amount,
                 `${portion}%`,
             ]);
+            bMatched += data.matched;
+            bTracking += data.total;
+            bAmount += data.amount;
         });
+
+        // 2. ✅ 해당 기수 기간 내 '기타(기존회원)' 배분 결과
+        const otherPortion =
+            grandTotal > 0 ? ((batch.otherAmount / grandTotal) * 100).toFixed(1) : '0.0';
+        html += `<tr class="batch-other-row"><td>${batch.label}</td><td>기타(기존회원)</td><td>${
+            batch.otherCount
+        } / -</td><td>-</td><td>${batch.otherAmount.toLocaleString()}원</td><td>${otherPortion}%</td></tr>`;
+        csvRows.push([
+            batch.label,
+            '기타(기존회원)',
+            batch.otherCount,
+            0,
+            '-',
+            batch.otherAmount,
+            `${otherPortion}%`,
+        ]);
+
+        // 3. 기수별 전체 성과 (소계)
+        const totalBMatched = bMatched + batch.otherCount;
+        const totalBAmount = bAmount + batch.otherAmount;
+        const bRate = bTracking > 0 ? ((bMatched / bTracking) * 100).toFixed(1) : '0.0';
+        const bPortion = grandTotal > 0 ? ((totalBAmount / grandTotal) * 100).toFixed(1) : '0.0';
+
+        html += `<tr class="subtotal-row"><td>${
+            batch.label
+        } 전체</td><td>기수 소계</td><td>${totalBMatched} / ${bTracking}</td><td>${bRate}%</td><td>${totalBAmount.toLocaleString()}원</td><td>${bPortion}%</td></tr>`;
+        csvRows.push([
+            batch.label,
+            '기수소계',
+            totalBMatched,
+            bTracking,
+            `${bRate}%`,
+            totalBAmount,
+            `${bPortion}%`,
+        ]);
     });
 
-    html += `<tr class="total-row"><td colspan="4">합계</td><td colspan="2">${grandTotalSales.toLocaleString()}원</td></tr></tbody></table>`;
+    html += `<tr class="total-row"><td colspan="4">전체 매출 합계</td><td colspan="2">${grandTotal.toLocaleString()}원</td></tr></tbody></table>`;
     $('.stat').innerHTML = html;
-    resultSummary = csvRows;
+    resultSummaryRows = csvRows;
 }
 
 // 이벤트 바인딩
@@ -238,7 +284,7 @@ $('#free').addEventListener('change', async (e) => {
 });
 $('#run').addEventListener('click', runMatch);
 $('#dlCsv').addEventListener('click', () => {
-    const csv = '\uFEFF' + resultSummary.map((r) => r.join(',')).join('\n');
+    const csv = '\uFEFF' + resultSummaryRows.map((r) => r.join(',')).join('\n');
     const b = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(b);
@@ -250,7 +296,7 @@ $('#dlXls').addEventListener('click', () => {
         $('.stat').innerHTML
     }</body></html>`;
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([html], { type: 'application/vnd.ms-excel' }));
+    a.href = URL.createObjectURL(new Blob(['\uFEFF' + html], { type: 'application/vnd.ms-excel' }));
     a.download = $('#fname').value + '.xls';
     a.click();
 });
