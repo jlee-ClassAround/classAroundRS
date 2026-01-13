@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ko">
+    <head>
+        <meta charset="utf-8" />
+        <title>기수/경로별 정밀 검수기</title>
+        <link rel="stylesheet" href="style.css" />
+        <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    </head>
+    <body>
+        <div class="wrap">
+            <div class="card">
+                <h1>📈 기수별·유입경로별 성과 분석기</h1>
+                <p class="desc">
+                    코어데브 파일을 기수별로 업로드하면, 해당 기수 내 유입경로별 전환 성과를
+                    자동으로 계산합니다.
+                </p>
+
+                <div class="row">
+                    <div id="paidFilesContainer">
+                        <label>① 기수별 트래킹 파일 (G열=전화번호, D열=유입경로)</label>
+                    </div>
+                    <button id="addPaidFileBtn">+ 기수 추가</button>
+                </div>
+
+                <div class="row">
+                    <label>② 구글 결제자 파일 (E열=전화번호, O열=결제금액)</label>
+                    <input type="file" id="free" accept=".csv .xlsx" />
+                </div>
+
+                <div class="btns">
+                    <button id="run" disabled>데이터 분석 실행</button>
+                    <input id="fname" type="text" placeholder="파일명" value="성과분석_리포트" />
+                    <button id="dlCsv" disabled>CSV 다운로드</button>
+                    <button id="dlXls" disabled>Excel 다운로드</button>
+                    <button id="reset">초기화</button>
+                    <span
+                        id="stat"
+                        style="margin-left: auto; font-weight: bold; color: var(--primary)"
+                        >분석 대기 중</span
+                    >
+                </div>
+
+                <div class="stat"></div>
+            </div>
+        </div>
+        <div id="toast" class="toast"></div>
+        <script src="index.js"></script>
+    </body>
+</html>
