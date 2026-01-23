@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ko">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>RS계산하는사이트</title>
+        <link rel="stylesheet" href="style.css" />
+        <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+        <script src="https://accounts.google.com/gsi/client" async defer></script>
+        <script src="https://apis.google.com/js/api.js" async defer></script>
+    </head>
+    <body>
+        <div class="dashboard-wrapper">
+            <div class="main-card">
+                <header class="dashboard-header">
+                    <div class="brand">
+                        <div>
+                            <h1>RS를 계산합니다</h1>
+                        </div>
+                    </div>
+                    <div class="auth-section">
+                        <button id="auth_btn" class="btn btn-google btn-neon" disabled>
+                            Google 연동 시작
+                        </button>
+                        <span id="app_status" class="status-indicator">연동 대기 중</span>
+                    </div>
+                </header>
+
+                <div class="control-grid">
+                    <div class="setup-box">
+                        <div class="box-header">
+                            <span class="badge">Step 1</span>
+                            <h3>코어데브 강의 설정</h3>
+                        </div>
+                        <div class="box-body">
+                            <button id="btn_open_search" class="btn btn-accent full-width">
+                                🔍 강의 검색 및 다중 선택
+                            </button>
+                            <p id="selected_count" class="info-text">선택된 강의가 없습니다.</p>
+                        </div>
+                    </div>
+
+                    <div class="setup-box">
+                        <div class="box-header">
+                            <span class="badge">Step 2</span>
+                            <h3>분석 대상 시트 탭</h3>
+                        </div>
+                        <div class="box-body">
+                            <div class="searchable-select">
+                                <div id="tabs_select_trigger" class="select-trigger">
+                                    시트 연동 후 선택 가능
+                                </div>
+                                <div id="tabs_dropdown" class="select-dropdown">
+                                    <div class="dropdown-search">
+                                        <input
+                                            type="text"
+                                            id="tabs_search_input"
+                                            placeholder="탭 이름 검색..."
+                                        />
+                                    </div>
+                                    <ul id="tabs_list_items"></ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <footer class="dashboard-footer">
+                    <div class="main-btn-group">
+                        <button id="run_match" class="btn btn-primary btn-xl" disabled>
+                            🚀 성과 분석 시작
+                        </button>
+                        <button id="reset_btn" class="btn btn-danger-outline btn-xl">
+                            🔄 분석 초기화
+                        </button>
+                    </div>
+                </footer>
+
+                <hr class="divider" />
+                <div id="report_container" class="report-area">
+                    <div class="placeholder-msg">
+                        분석 조건을 설정하고 상단의 버튼을 눌러주십시오.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="search_modal" class="modal-backdrop">
+            <div class="modal-ui">
+                <header class="modal-header">
+                    <h3>📙 코어데브 강의 검색</h3>
+                    <button id="close_modal" class="close-x">&times;</button>
+                </header>
+                <div class="modal-body">
+                    <div class="search-input-group">
+                        <input type="text" id="search_input" placeholder="강의명을 입력하세요..." />
+                        <button id="do_search" class="btn btn-primary">검색</button>
+                    </div>
+                    <div id="search_results" class="scroll-list">
+                        <p class="empty-list">검색어를 입력하고 검색 버튼을 눌러주세요.</p>
+                    </div>
+                </div>
+                <footer class="modal-footer">
+                    <button id="selection_complete" class="btn btn-primary full-width">
+                        선택 완료
+                    </button>
+                </footer>
+            </div>
+        </div>
+
+        <div id="toast" class="toast"></div>
+        <script src="index.js"></script>
+    </body>
+</html>

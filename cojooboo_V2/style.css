@@ -1,0 +1,381 @@
+@import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;800&display=swap');
+
+:root {
+    --primary: #1a73e8;
+    --accent: #f8941c;
+    --danger: #d93025;
+    --bg-color: #f0f2f5;
+    --card-bg: #ffffff;
+    --text-dark: #202124;
+    --text-gray: #5f6368;
+    --border: #dadce0;
+    --radius: 16px;
+}
+
+* {
+    box-sizing: border-box;
+    font-family: 'Pretendard', sans-serif;
+}
+body {
+    background: var(--bg-color);
+    color: var(--text-dark);
+    margin: 0;
+    padding: 40px 20px;
+}
+.dashboard-wrapper {
+    max-width: 1000px;
+    margin: 0 auto;
+}
+.main-card {
+    background: var(--card-bg);
+    border-radius: 24px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+    padding: 50px;
+}
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 45px;
+}
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+h1 {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--primary);
+}
+.control-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 40px;
+}
+.setup-box {
+    background: #ffffff;
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px;
+}
+.setup-box:hover {
+    border-color: var(--primary);
+}
+.box-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 22px;
+}
+.badge {
+    background: var(--primary);
+    color: white;
+    padding: 5px 12px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 800;
+}
+.btn {
+    padding: 14px 28px;
+    border-radius: 12px;
+    border: none;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+.btn-primary {
+    background: var(--primary);
+    color: white;
+}
+.btn-danger-outline {
+    background: #fff;
+    color: var(--danger);
+    border: 2px solid #fce8e6;
+}
+.btn-danger-outline:hover {
+    border-color: var(--danger);
+    background: #fef7f6;
+}
+.btn-accent {
+    background: var(--accent);
+    color: white;
+}
+.btn-google {
+    background: #fff;
+    border: 1.5px solid var(--border);
+    color: var(--text-dark);
+}
+.btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+.main-btn-group {
+    display: flex;
+    gap: 16px;
+    width: 100%;
+}
+.btn-xl {
+    flex: 1;
+    padding: 18px;
+    font-size: 17px;
+    font-weight: 800;
+}
+.full-width {
+    width: 100%;
+}
+.searchable-select {
+    position: relative;
+}
+.select-trigger {
+    padding: 15px;
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    background: #fafafa;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.select-trigger::after {
+    content: '▼';
+    font-size: 10px;
+    color: var(--text-gray);
+}
+.select-dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+    z-index: 100;
+    display: none;
+    overflow: hidden;
+    border: 1px solid var(--border);
+}
+.dropdown-search {
+    padding: 10px;
+    border-bottom: 1px solid var(--border);
+}
+.dropdown-search input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    outline: none;
+}
+.select-dropdown ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.select-dropdown li {
+    padding: 12px 15px;
+    font-size: 14px;
+    cursor: pointer;
+}
+.select-dropdown li:hover {
+    background: #e8f0fe;
+    color: var(--primary);
+}
+.modal-backdrop {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 9999;
+    backdrop-filter: blur(4px);
+}
+.modal-ui {
+    background: white;
+    width: 500px;
+    max-width: 90%;
+    margin: 80px auto;
+    border-radius: 28px;
+    overflow: hidden;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+}
+.modal-header {
+    padding: 20px 25px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.close-x {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--text-gray);
+}
+.modal-body {
+    padding: 25px;
+}
+.search-input-group {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+.search-input-group input {
+    flex: 1;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    outline: none;
+}
+.scroll-list {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+.search-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 15px;
+    border-bottom: 1px solid #f1f3f4;
+    cursor: pointer;
+    font-size: 14px;
+}
+.modal-footer {
+    padding: 20px 25px;
+    background: #f8f9fa;
+}
+.report-area table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+.report-area th {
+    background: #f1f3f4;
+    padding: 12px;
+    border: 1px solid var(--border);
+    font-size: 13px;
+}
+.report-area td {
+    padding: 14px;
+    border: 1px solid var(--border);
+    text-align: right;
+}
+.report-area td:first-child {
+    text-align: left;
+    font-weight: 600;
+}
+.summary-card {
+    background: #e8f0fe;
+    padding: 30px;
+    border-radius: 20px;
+    margin-top: 30px;
+    border: 1px solid #c2d7ff;
+}
+.summary-card h3 {
+    margin-top: 0;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #c2d7ff;
+    padding-bottom: 10px;
+}
+.summary-line {
+    margin: 8px 0;
+    font-size: 15px;
+    color: #333;
+}
+.toast {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    background: #202124;
+    color: white;
+    padding: 12px 25px;
+    border-radius: 10px;
+    display: none;
+    z-index: 10000;
+}
+.divider {
+    border: 0;
+    border-top: 1px solid #eee;
+    margin: 40px 0;
+}
+/* 💡 [네온 효과 핵심] 버튼이 활성화되었을 때만 작동하는 애니메이션 */
+@keyframes neon-pulse {
+    0% {
+        box-shadow:
+            0 0 5px rgba(26, 115, 232, 0.4),
+            0 0 10px rgba(26, 115, 232, 0.2);
+        border-color: rgba(26, 115, 232, 0.5);
+    }
+    50% {
+        box-shadow:
+            0 0 15px rgba(26, 115, 232, 0.8),
+            0 0 30px rgba(26, 115, 232, 0.4);
+        border-color: rgba(26, 115, 232, 1);
+        transform: scale(1.02); /* 살짝 커지는 효과로 시선 강탈 */
+    }
+    100% {
+        box-shadow:
+            0 0 5px rgba(26, 115, 232, 0.4),
+            0 0 10px rgba(26, 115, 232, 0.2);
+        border-color: rgba(26, 115, 232, 0.5);
+    }
+}
+
+/* 기본 구글 버튼 스타일 보강 */
+.btn-google {
+    background: #fff;
+    color: #1a73e8 !important; /* 글자색 강조 */
+    border: 2px solid #dadce0;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+/* 💡 버튼이 활성화(:not(:disabled)) 되면 네온 애니메이션 시작 */
+.btn-google:not(:disabled) {
+    animation: neon-pulse 2s infinite ease-in-out;
+    border-width: 2px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+/* 호버 시 네온 폭발 효과 */
+.btn-google:not(:disabled):hover {
+    background: #1a73e8;
+    color: #fff !important;
+    box-shadow:
+        0 0 20px rgba(26, 115, 232, 1),
+        0 0 40px rgba(26, 115, 232, 0.6) !important;
+    animation: none; /* 호버 시엔 고정 빛 */
+}
+
+/* 비활성화 상태는 아주 밑밑하게 유지 (대비 효과) */
+.btn-google:disabled {
+    opacity: 0.3;
+    filter: grayscale(1);
+    animation: none;
+}
+
+/* 상태 표시 텍스트도 버튼 옆에서 강조 */
+.status-indicator {
+    display: block;
+    margin-top: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-gray);
+    text-align: center;
+}
